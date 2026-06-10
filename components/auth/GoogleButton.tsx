@@ -9,13 +9,19 @@ const GoogleIcon = () => (
 
 interface GoogleButtonProps {
   children: React.ReactNode;
+  onClick?: () => void;
+  loading?: boolean;
 }
 
-export default function GoogleButton({ children }: GoogleButtonProps) {
+export default function GoogleButton({ children, onClick, loading }: GoogleButtonProps) {
   return (
-    <button className="lift w-full h-10 rounded-md bg-elevated border border-line text-[14px] font-medium text-ink hover:border-[#555555] flex items-center justify-center gap-2.5 transition cursor-pointer">
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className="lift w-full h-10 rounded-md bg-elevated border border-line text-[14px] font-medium text-ink hover:border-[#555555] flex items-center justify-center gap-2.5 transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+    >
       <GoogleIcon />
-      {children}
+      {loading ? 'Redirecting…' : children}
     </button>
   );
 }

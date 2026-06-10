@@ -5,10 +5,35 @@ import { useRouter } from 'next/navigation';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
-import { CHANNELS, DMS, CURRENT_USER, USERS } from '@/lib/data';
-import { useLogout } from '@/hooks/auth';
+import { CHANNELS, DMS, USERS } from '@/lib/data';
+import { useLogout, useCurrentUser } from '@/hooks/auth';
 import { useToast } from '@/lib/toast-context';
 import { getAuthErrorMessage } from '@/lib/api/errors';
+import type { UserStatus } from '@/lib/api/types';
+
+const STATUS_COLOR: Record<UserStatus, string> = {
+  ONLINE:         '#22c55e',
+  AWAY:           '#eab308',
+  BUSY:           '#ef4444',
+  DO_NOT_DISTURB: '#ef4444',
+  FOCUSING:       '#a855f7',
+  IN_A_MEETING:   '#3b82f6',
+  ON_VACATION:    '#14b8a6',
+  OUT_OF_OFFICE:  '#f97316',
+  OFFLINE:        '#6b7280',
+};
+
+const STATUS_LABEL: Record<UserStatus, string> = {
+  ONLINE:         'Online',
+  AWAY:           'Away',
+  BUSY:           'Busy',
+  DO_NOT_DISTURB: 'Do not disturb',
+  FOCUSING:       'Focusing',
+  IN_A_MEETING:   'In a meeting',
+  ON_VACATION:    'On vacation',
+  OUT_OF_OFFICE:  'Out of office',
+  OFFLINE:        'Offline',
+};
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -54,17 +79,18 @@ export default function Sidebar({
   const router = useRouter();
   const toast   = useToast();
   const logout  = useLogout();
+  const me      = useCurrentUser();
   const [chanOpen, setChanOpen] = useState(true);
   const [dmOpen, setDmOpen] = useState(true);
 
   async function handleLogout() {
     try {
       await logout.mutateAsync();
-      toast.success('Logged out');
-      router.push('/login');
-    } catch (err) {
-      toast.error(getAuthErrorMessage(err));
+    } catch {
+      // ignore — still clear local state and redirect
     }
+    toast.success('Logged out');
+    router.push('/login');
   }
 
   return (
@@ -255,36 +281,57 @@ export default function Sidebar({
       </div>
 
       {/* User footer */}
-      <div className="border-t border-divider p-2.5 flex items-center gap-2.5">
+      <div className="border-t border-divider p-2.5 flex items-center gap-1.5">
         <button
-          onClick={() => openProfile('ashim')}
-          className="flex items-center gap-2.5 flex-1 min-w-0 rounded-md hover:bg-elevated transition p-1 -m-1"
+          onClick={() => openProfile(me?.id ?? '')}
+          className="flex items-center gap-2 flex-1 min-w-0 rounded-md hover:bg-elevated transition p-1.5"
         >
-          <Avatar userId="ashim" size={32} />
-          {!collapsed && (
+          {/* Avatar */}
+          {me?.avatarUrl ? (
+            <img src={me.avatarUrl} alt={me.name} className="shrink-0 rounded-md object-cover" style={{ width: 30, height: 30 }} />
+          ) : (
+            <div
+              className="shrink-0 rounded-md flex items-center justify-center font-semibold text-white select-none"
+              style={{ width: 30, height: 30, fontSize: 12, background: '#3b3b3b', letterSpacing: '-0.02em' }}
+            >
+              {me?.name?.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase() ?? '?'}
+            </div>
+          )}
+
+          {!collapsed && me && (
             <div className="text-left min-w-0">
-              <div className="text-[13px] font-semibold text-ink truncate">Ashim</div>
-              <div className="text-[11px] text-sub truncate">{CURRENT_USER.status}</div>
+              <div className="text-[13px] font-semibold text-ink truncate leading-tight">{me.name}</div>
+              <div className="flex items-center gap-1 mt-0.5">
+                {me.status ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: STATUS_COLOR[me.status] }} />
+                    <span className="text-[11px] text-sub truncate">{STATUS_LABEL[me.status]}</span>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-muted truncate">@{me.username}</span>
+                )}
+              </div>
             </div>
           )}
         </button>
+
         {!collapsed && (
           <>
             <Tooltip label="Settings" side="top">
               <button
                 onClick={() => router.push('/settings?from=nomor')}
-                className="w-8 h-8 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
+                className="w-7 h-7 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
               >
-                <Icon name="settings" size={16} />
+                <Icon name="settings" size={15} />
               </button>
             </Tooltip>
             <Tooltip label="Log out" side="top">
               <button
                 onClick={handleLogout}
                 disabled={logout.isPending}
-                className="w-8 h-8 rounded-md text-sub hover:text-danger hover:bg-elevated flex items-center justify-center transition"
+                className="w-7 h-7 rounded-md text-sub hover:text-danger hover:bg-elevated flex items-center justify-center transition"
               >
-                <Icon name="logout" size={16} />
+                <Icon name="logout" size={15} />
               </button>
             </Tooltip>
           </>

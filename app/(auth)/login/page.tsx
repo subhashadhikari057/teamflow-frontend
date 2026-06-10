@@ -11,6 +11,7 @@ import Icon from '@/components/primitives/Icon';
 import { useToast } from '@/lib/toast-context';
 import { useLogin, useVerify2FA } from '@/hooks/auth';
 import { getAuthErrorMessage } from '@/lib/api/errors';
+import { authApi } from '@/lib/api/auth';
 
 // ─── 2FA step ─────────────────────────────────────────────────────────────────
 
@@ -157,9 +158,22 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
   const login    = useLogin();
   const router   = useRouter();
 
-  const [identifier,   setIdentifier]   = useState('');
-  const [password,     setPassword]     = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [identifier,     setIdentifier]     = useState('');
+  const [password,       setPassword]       = useState('');
+  const [showPassword,   setShowPassword]   = useState(false);
+  const [googleLoading,  setGoogleLoading]  = useState(false);
+
+  async function handleGoogleLogin() {
+    setGoogleLoading(true);
+    try {
+      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/nomor' });
+      localStorage.setItem('oauth_welcome', '1');
+      window.location.href = url;
+    } catch (err) {
+      setGoogleLoading(false);
+      toast.error(getAuthErrorMessage(err));
+    }
+  }
 
   async function handleLogin() {
     if (!identifier || !password) { toast.warning('Please fill in all fields.'); return; }
@@ -181,7 +195,7 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
       <h1 className="text-[22px] font-semibold tracking-tightest text-ink text-center">Welcome back</h1>
       <p className="text-[13.5px] text-sub text-center mt-1.5 mb-6">Log in to your workspace.</p>
 
-      <GoogleButton>Continue with Google</GoogleButton>
+      <GoogleButton onClick={handleGoogleLogin} loading={googleLoading}>Continue with Google</GoogleButton>
 
       <div className="flex items-center gap-3 my-5">
         <div className="flex-1 h-px bg-divider" />
@@ -234,6 +248,14 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
 
 export default function LoginPage() {
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const toast = useToast();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === 'oauth_failed') {
+      toast.error('Google sign-in failed. Please try again.');
+    }
+  }, []);
 
   return (
     <AuthShell>

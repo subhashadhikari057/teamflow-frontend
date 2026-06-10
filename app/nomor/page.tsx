@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/app/Sidebar';
 import ChannelView from '@/components/app/ChannelView';
 import ThreadPanel from '@/components/app/ThreadPanel';
@@ -42,13 +43,21 @@ export default function WorkspacePage() {
   const { show: flashToast } = useToast();
   const [density,  setDensityRaw]  = useState<Density>('comfortable');
   const [fontSize, setFontSizeRaw] = useState<FontSize>('default');
+  const router = useRouter();
 
   useEffect(() => {
     const d = localStorage.getItem('tf-density')  as Density  | null;
     const f = localStorage.getItem('tf-fontsize') as FontSize | null;
     if (d) setDensityRaw(d);
     if (f) setFontSizeRaw(f);
+
+    const oauthWelcome = localStorage.getItem('oauth_welcome');
+    if (oauthWelcome) {
+      localStorage.removeItem('oauth_welcome');
+      flashToast('Signed in with Google', { type: 'success', description: 'Welcome to Teamflow!' });
+    }
   }, []);
+
 
   const setDensity  = (d: Density)  => { setDensityRaw(d);  localStorage.setItem('tf-density',  d); };
   const setFontSize = (f: FontSize) => { setFontSizeRaw(f); localStorage.setItem('tf-fontsize', f); };

@@ -10,9 +10,10 @@ interface FieldProps {
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   placeholder?: string;
   autoFocus?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 }
 
-export default function Field({ label, type = 'text', value, onChange, placeholder, autoFocus }: FieldProps) {
+export default function Field({ label, type = 'text', value, onChange, placeholder, autoFocus, onKeyDown }: FieldProps) {
   const isPassword = type === 'password';
   const [show, setShow] = useState(false);
 
@@ -24,6 +25,7 @@ export default function Field({ label, type = 'text', value, onChange, placehold
           type={isPassword ? (show ? 'text' : 'password') : type}
           value={value}
           onChange={onChange}
+          onKeyDown={onKeyDown}
           placeholder={placeholder}
           autoFocus={autoFocus}
           className={`w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition ${isPassword ? 'pr-10' : ''}`}
