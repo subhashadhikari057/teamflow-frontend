@@ -7,9 +7,11 @@ import AuthShell from '@/components/auth/AuthShell';
 import Field from '@/components/auth/Field';
 import GoogleButton from '@/components/auth/GoogleButton';
 import Button from '@/components/primitives/Button';
+import { useToast } from '@/lib/toast-context';
 
 export default function LoginPage() {
   const router = useRouter();
+  const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -49,7 +51,14 @@ export default function LoginPage() {
               className="w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition"
             />
           </div>
-          <Button size="lg" className="w-full" onClick={() => router.push('/nomor')}>
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={() => {
+              toast.success('Logged in', 'Welcome back to your workspace');
+              setTimeout(() => router.push('/nomor'), 900);
+            }}
+          >
             Log in
           </Button>
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Sidebar from '@/components/app/Sidebar';
 import ChannelView from '@/components/app/ChannelView';
 import ThreadPanel from '@/components/app/ThreadPanel';
@@ -8,9 +8,8 @@ import SearchOverlay from '@/components/app/SearchOverlay';
 import ShortcutsOverlay from '@/components/app/ShortcutsOverlay';
 import ProfilePopover from '@/components/app/ProfilePopover';
 import CallOverlay from '@/components/app/CallOverlay';
-import Toast from '@/components/app/Toast';
-import SettingsOverlay from '@/components/app/SettingsOverlay';
 import ChannelInfoPanel from '@/components/app/ChannelInfoPanel';
+import { useToast } from '@/lib/toast-context';
 import { AppearanceContext } from '@/lib/appearance-context';
 import type { Density, FontSize } from '@/lib/appearance-context';
 import { CHANNELS } from '@/lib/data';
@@ -23,7 +22,6 @@ interface ActiveView {
 interface Overlays {
   search: boolean;
   shortcuts: boolean;
-  settings: boolean;
   info: boolean;
 }
 
@@ -38,9 +36,10 @@ export default function WorkspacePage() {
   const [active, setActive] = useState<ActiveView>({ type: 'channel', id: 'engineering' });
   const [threadId, setThreadId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [ov, setOv] = useState<Overlays>({ search: false, shortcuts: false, settings: false, info: false });
+  const [ov, setOv] = useState<Overlays>({ search: false, shortcuts: false, info: false });
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [call, setCall] = useState<CallState>({ open: false, muted: false, camOff: false, sharing: false });
+  const { show: flashToast } = useToast();
   const [density,  setDensityRaw]  = useState<Density>(
     () => (typeof localStorage !== 'undefined' ? (localStorage.getItem('tf-density')  as Density  | null) : null) ?? 'comfortable'
   );
@@ -50,16 +49,8 @@ export default function WorkspacePage() {
 
   const setDensity  = (d: Density)  => { setDensityRaw(d);  localStorage.setItem('tf-density',  d); };
   const setFontSize = (f: FontSize) => { setFontSizeRaw(f); localStorage.setItem('tf-fontsize', f); };
-  const [toast, setToast] = useState('');
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const FONT_MAP: Record<FontSize, string> = { small: '13px', default: '14px', large: '16px' };
-
-  const flashToast = useCallback((msg: string) => {
-    setToast(msg);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(''), 1800);
-  }, []);
 
   // Auto-collapse on small screens
   useEffect(() => {
@@ -94,7 +85,8 @@ export default function WorkspacePage() {
   }, [selectChannel]);
 
   const openCompose = useCallback(() => {
-    selectDm('sarah'); flashToast('New message');
+    selectDm('sarah');
+    flashToast('New message');
   }, [selectDm, flashToast]);
 
   // Global keyboard handler
@@ -104,7 +96,7 @@ export default function WorkspacePage() {
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
       const k = e.key;
       const ctrl = e.ctrlKey || e.metaKey;
-      const modalOpen = ov.search || ov.shortcuts || call.open;
+      const modalOpen = ov.search || ov.shortcuts || call.open || ov.info;
 
       // Toggle shortcuts: "?" or Ctrl+/
       if ((k === '?' && !typing) || (ctrl && k === '/')) {
@@ -168,7 +160,7 @@ export default function WorkspacePage() {
         active={active}
         onSelect={onSelect}
         openSearch={() => setOv((o) => ({ ...o, search: true }))}
-        openSettings={() => setOv((o) => ({ ...o, settings: true }))}
+        openSettings={() => {}}
         openShortcuts={() => setOv((o) => ({ ...o, shortcuts: true }))}
         openProfile={setProfileUser}
         openCompose={openCompose}
@@ -226,11 +218,6 @@ export default function WorkspacePage() {
         />
       )}
 
-      {ov.settings && (
-        <SettingsOverlay onClose={() => setOv((o) => ({ ...o, settings: false }))} />
-      )}
-
-      <Toast msg={toast} />
     </div>
     </AppearanceContext.Provider>
   );

@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Manrope } from 'next/font/google';
 import './globals.css';
+import { ToastProvider } from '@/lib/toast-context';
+import Toaster from '@/components/primitives/Toaster';
 
 const manrope = Manrope({
   subsets: ['latin'],
@@ -18,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`h-full ${manrope.variable}`}>
       <body className="min-h-full bg-bg text-ink antialiased" style={{ fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif' }}>
-        {children}
+        <ToastProvider>
+          {children}
+          <Toaster />
+        </ToastProvider>
       </body>
     </html>
   );
