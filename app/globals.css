@@ -1,26 +1,92 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Colors */
+  --color-bg:       #000000;
+  --color-panel:    #111111;
+  --color-elevated: #1a1a1a;
+  --color-sidebar:  #0a0a0a;
+  --color-line:     #333333;
+  --color-divider:  #222222;
+  --color-ink:      #ffffff;
+  --color-sub:      #888888;
+  --color-muted:    #555555;
+  --color-online:   #22c55e;
+  --color-away:     #eab308;
+  --color-danger:   #ef4444;
+
+  /* Typography */
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  /* Letter spacing */
+  --tracking-tightest: -0.02em;
+
+  /* Radius overrides */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 40px;
+  --radius-pill: 9999px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  color: #fff;
+  font-family: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+h1, h2, h3, h4, h5 { letter-spacing: -0.02em; }
+
+::selection { background: #ffffff; color: #000000; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #222; border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #333; background-clip: padding-box; }
+* { scrollbar-width: thin; scrollbar-color: #222 transparent; }
+
+/* Keyboard key cap */
+.kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 6px;
+  background: #1a1a1a; border: 1px solid #333; border-radius: 4px;
+  font-family: ui-monospace, monospace; font-size: 11px; color: #888;
+  line-height: 1;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleIn { from { opacity: 0; transform: scale(0.97) translateY(4px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+.anim-fade { animation: fadeIn 150ms ease both; }
+.anim-scale { animation: scaleIn 160ms cubic-bezier(0.16,1,0.3,1) both; }
+.anim-slide { animation: slideUp 200ms ease both; }
+.dot-typing span { animation: blink 1.2s infinite both; }
+.dot-typing span:nth-child(2) { animation-delay: 0.2s; }
+.dot-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+/* Hover lift */
+.lift { transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease, color 150ms ease, opacity 150ms ease; }
+.lift:hover { transform: translateY(-1px); }
+
+/* Scrollbar hide */
+.animate-marquee { animation: marquee 18s linear infinite; }
+.animate-marquee:hover { animation-play-state: paused; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade, .anim-scale, .anim-slide, .animate-marquee { animation: none; }
+  .lift:hover { transform: none; }
 }
