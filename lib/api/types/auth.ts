@@ -23,6 +23,7 @@ export interface AuthUser {
   role: GlobalRole;
   isEmailVerified: boolean;
   isActive: boolean;
+  twoFactorEnabled: boolean;
   lastSeenAt?: string;
   createdAt: string;
 }
@@ -130,6 +131,10 @@ export interface Confirm2FAPayload {
 }
 
 export interface Disable2FAPayload {
+  password: string;
+}
+
+export interface RegenerateBackupCodesPayload {
   password: string;
 }
 

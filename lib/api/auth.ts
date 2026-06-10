@@ -12,6 +12,7 @@ import type {
   OAuthParams,
   OAuthRedirectResponse,
   RegisterPayload,
+  RegenerateBackupCodesPayload,
   ResendVerificationPayload,
   ResetPasswordPayload,
   SessionsListResponse,
@@ -48,7 +49,7 @@ export const authApi = {
   verify2FA:              (data: Verify2FAPayload)  => post<LoginResponse>('/auth/2fa/verify', data),
   disable2FA:             (data: Disable2FAPayload) => post<ActionResponse>('/auth/2fa/disable', data),
   getBackupCodes:         ()                        => get<TwoFactorBackupCodesResponse>('/auth/2fa/backup-codes'),
-  regenerateBackupCodes:  ()                        => post<TwoFactorBackupCodesResponse>('/auth/2fa/backup-codes/regenerate'),
+  regenerateBackupCodes:  (data: RegenerateBackupCodesPayload) => post<TwoFactorBackupCodesResponse>('/auth/2fa/backup-codes/regenerate', data),
 
   // ─── Sessions ──────────────────────────────────────────────────────────
   getSessions:       ()           => get<SessionsListResponse>('/auth/sessions'),

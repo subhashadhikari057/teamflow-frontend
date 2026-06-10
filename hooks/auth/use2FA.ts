@@ -5,6 +5,7 @@ import type {
   Confirm2FAPayload,
   Disable2FAPayload,
   LoginResponse,
+  RegenerateBackupCodesPayload,
   TwoFactorBackupCodesResponse,
   TwoFactorEnableResponse,
   Verify2FAPayload,
@@ -19,8 +20,10 @@ export function useEnable2FA() {
 
 // Step 2 — confirm 2FA setup with first TOTP code; returns backup codes
 export function useConfirm2FA() {
+  const qc = useQueryClient();
   return useMutation<TwoFactorBackupCodesResponse, Error, Confirm2FAPayload>({
     mutationFn: authApi.confirm2FA,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ME_KEY }),
   });
 }
 
@@ -41,8 +44,10 @@ export function useVerify2FA() {
 
 // Disable 2FA (requires current password)
 export function useDisable2FA() {
+  const qc = useQueryClient();
   return useMutation<{ message: string }, Error, Disable2FAPayload>({
     mutationFn: authApi.disable2FA,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ME_KEY }),
   });
 }
 
@@ -57,11 +62,11 @@ export function useBackupCodes(enabled = false) {
   });
 }
 
-// Regenerate backup codes
+// Regenerate backup codes (requires current password)
 export function useRegenerateBackupCodes() {
   const qc = useQueryClient();
 
-  return useMutation<TwoFactorBackupCodesResponse, Error, void>({
+  return useMutation<TwoFactorBackupCodesResponse, Error, RegenerateBackupCodesPayload>({
     mutationFn: authApi.regenerateBackupCodes,
     onSuccess:  (data) => qc.setQueryData(['2fa', 'backup-codes'], data),
   });
