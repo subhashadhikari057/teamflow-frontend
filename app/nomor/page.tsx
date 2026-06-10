@@ -40,12 +40,15 @@ export default function WorkspacePage() {
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [call, setCall] = useState<CallState>({ open: false, muted: false, camOff: false, sharing: false });
   const { show: flashToast } = useToast();
-  const [density,  setDensityRaw]  = useState<Density>(
-    () => (typeof localStorage !== 'undefined' ? (localStorage.getItem('tf-density')  as Density  | null) : null) ?? 'comfortable'
-  );
-  const [fontSize, setFontSizeRaw] = useState<FontSize>(
-    () => (typeof localStorage !== 'undefined' ? (localStorage.getItem('tf-fontsize') as FontSize | null) : null) ?? 'default'
-  );
+  const [density,  setDensityRaw]  = useState<Density>('comfortable');
+  const [fontSize, setFontSizeRaw] = useState<FontSize>('default');
+
+  useEffect(() => {
+    const d = localStorage.getItem('tf-density')  as Density  | null;
+    const f = localStorage.getItem('tf-fontsize') as FontSize | null;
+    if (d) setDensityRaw(d);
+    if (f) setFontSizeRaw(f);
+  }, []);
 
   const setDensity  = (d: Density)  => { setDensityRaw(d);  localStorage.setItem('tf-density',  d); };
   const setFontSize = (f: FontSize) => { setFontSizeRaw(f); localStorage.setItem('tf-fontsize', f); };

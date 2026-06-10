@@ -6,6 +6,9 @@ import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
 import { CHANNELS, DMS, CURRENT_USER, USERS } from '@/lib/data';
+import { useLogout } from '@/hooks/auth';
+import { useToast } from '@/lib/toast-context';
+import { getAuthErrorMessage } from '@/lib/api/errors';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -49,8 +52,20 @@ export default function Sidebar({
   collapsed, active, onSelect, openSearch, openSettings, openShortcuts, openProfile, openCompose,
 }: SidebarProps) {
   const router = useRouter();
+  const toast   = useToast();
+  const logout  = useLogout();
   const [chanOpen, setChanOpen] = useState(true);
   const [dmOpen, setDmOpen] = useState(true);
+
+  async function handleLogout() {
+    try {
+      await logout.mutateAsync();
+      toast.success('Logged out');
+      router.push('/login');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+    }
+  }
 
   return (
     <aside
@@ -254,14 +269,25 @@ export default function Sidebar({
           )}
         </button>
         {!collapsed && (
-          <Tooltip label="Settings" side="top">
-            <button
-              onClick={() => router.push('/settings?from=nomor')}
-              className="w-8 h-8 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
-            >
-              <Icon name="settings" size={16} />
-            </button>
-          </Tooltip>
+          <>
+            <Tooltip label="Settings" side="top">
+              <button
+                onClick={() => router.push('/settings?from=nomor')}
+                className="w-8 h-8 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
+              >
+                <Icon name="settings" size={16} />
+              </button>
+            </Tooltip>
+            <Tooltip label="Log out" side="top">
+              <button
+                onClick={handleLogout}
+                disabled={logout.isPending}
+                className="w-8 h-8 rounded-md text-sub hover:text-danger hover:bg-elevated flex items-center justify-center transition"
+              >
+                <Icon name="logout" size={16} />
+              </button>
+            </Tooltip>
+          </>
         )}
       </div>
     </aside>

@@ -1,12 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Button from '@/components/primitives/Button';
 import Logo from '@/components/primitives/Logo';
 import { MEMBERS, USERS, CURRENT_USER } from '@/lib/data';
 import { useAppearance } from '@/lib/appearance-context';
+import { useCurrentUser, useMe, useChangePassword, useUpdateProfile } from '@/hooks/auth';
+import { authApi } from '@/lib/api/auth';
+import { useToast } from '@/lib/toast-context';
+import { getAuthErrorMessage } from '@/lib/api/errors';
+import type { UserStatus } from '@/lib/api/types';
 
 // ─────────────────────────────────────────
 // Shared primitives
@@ -54,14 +60,30 @@ function Sect({ title, desc, children }: { title: string; desc?: string; childre
   );
 }
 
-function FieldInput({ label, className = '', ...props }: { label: string; className?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+function FieldInput({ label, className = '', type, ...props }: { label: string; className?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const isPassword = type === 'password';
+  const [show, setShow] = useState(false);
+
   return (
     <div>
       <label className="block text-[13px] font-medium text-ink mb-1.5">{label}</label>
-      <input
-        className={`w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition ${className}`}
-        {...props}
-      />
+      <div className="relative">
+        <input
+          type={isPassword ? (show ? 'text' : 'password') : type}
+          className={`w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition ${isPassword ? 'pr-10' : ''} ${className}`}
+          {...props}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShow(s => !s)}
+            className="absolute right-0 top-0 h-10 w-10 flex items-center justify-center text-muted hover:text-ink transition"
+            tabIndex={-1}
+          >
+            <Icon name={show ? 'eyeoff' : 'eye'} size={15} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -83,79 +105,327 @@ function RoleBadge({ role }: { role: string }) {
 // Profile
 // ─────────────────────────────────────────
 
-function ProfileTab() {
-  const u = CURRENT_USER;
-  const [name, setName] = useState(u.name);
-  const [status, setStatus] = useState('🚀 Shipping');
-  const [saved, setSaved] = useState(false);
+const STATUS_OPTIONS: { value: UserStatus; label: string; color: string }[] = [
+  { value: 'ONLINE',         label: 'Online',          color: '#22c55e' },
+  { value: 'AWAY',           label: 'Away',            color: '#eab308' },
+  { value: 'BUSY',           label: 'Busy',            color: '#ef4444' },
+  { value: 'DO_NOT_DISTURB', label: 'Do Not Disturb',  color: '#ef4444' },
+  { value: 'FOCUSING',       label: 'Focusing',        color: '#a855f7' },
+  { value: 'IN_A_MEETING',   label: 'In a Meeting',    color: '#3b82f6' },
+  { value: 'ON_VACATION',    label: 'On Vacation',     color: '#14b8a6' },
+  { value: 'OUT_OF_OFFICE',  label: 'Out of Office',   color: '#f97316' },
+  { value: 'OFFLINE',        label: 'Offline',         color: '#6b7280' },
+];
 
-  function save() { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+const TIMEZONES = [
+  'Pacific/Midway', 'Pacific/Honolulu', 'America/Anchorage', 'America/Los_Angeles',
+  'America/Denver', 'America/Chicago', 'America/New_York', 'America/Sao_Paulo',
+  'Atlantic/Azores', 'Europe/London', 'Europe/Paris', 'Europe/Istanbul',
+  'Asia/Dubai', 'Asia/Karachi', 'Asia/Kolkata', 'Asia/Kathmandu',
+  'Asia/Dhaka', 'Asia/Bangkok', 'Asia/Singapore', 'Asia/Tokyo',
+  'Australia/Sydney', 'Pacific/Auckland',
+];
+
+
+function StatusSelect({ value, onChange }: { value: UserStatus | ''; onChange: (v: UserStatus | '') => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const selected = STATUS_OPTIONS.find(o => o.value === value);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full h-9 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink outline-none focus:border-[#555555] transition flex items-center justify-between gap-2"
+      >
+        {selected ? (
+          <span className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: selected.color }} />
+            {selected.label}
+          </span>
+        ) : (
+          <span className="text-muted">— Select —</span>
+        )}
+        <Icon name="chevdown" size={14} className="text-muted shrink-0" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full mt-1 w-full rounded-md border border-line bg-panel shadow-lg overflow-hidden">
+          {STATUS_OPTIONS.map(o => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full flex items-center gap-2.5 px-3 h-9 text-[14px] text-left hover:bg-elevated transition ${value === o.value ? 'text-ink' : 'text-sub'}`}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: o.color }} />
+              {o.label}
+              {value === o.value && <Icon name="check" size={13} className="ml-auto text-ink" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfileTab() {
+  const user          = useCurrentUser();
+  const { isLoading } = useMe();
+  const toast         = useToast();
+  const updateProfile = useUpdateProfile();
+
+  const [editing,  setEditing]  = useState(false);
+  const [name,     setName]     = useState('');
+  const [phone,    setPhone]    = useState('');
+  const [status,   setStatus]   = useState<UserStatus | ''>('');
+  const [timezone, setTimezone] = useState('');
+
+  function syncFromUser() {
+    if (user) {
+      setName(user.name);
+      setPhone(user.phone ?? '');
+      setStatus(user.status ?? '');
+      setTimezone(user.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+    }
+  }
+
+  useEffect(() => { syncFromUser(); }, [user]);
+
+  function cancel() {
+    syncFromUser();
+    setEditing(false);
+  }
+
+  async function save() {
+    try {
+      await updateProfile.mutateAsync({
+        name,
+        phone,
+        status: status || undefined,
+        timezone,
+      });
+      toast.success('Profile updated');
+      setEditing(false);
+    } catch {
+      toast.error('Failed to update profile. Please try again.');
+    }
+  }
+
+  const initials = user?.name
+    .split(' ')
+    .map(p => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() ?? '?';
+
+  const statusOption = STATUS_OPTIONS.find(o => o.value === user?.status);
+  const timezoneLabel = user?.timezone?.replace(/_/g, ' ') ?? '—';
+
+  const inputClass = 'w-full h-9 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition';
+  const selectClass = 'w-full h-9 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink outline-none focus:border-[#555555] transition cursor-pointer';
+
+  if (isLoading) {
+    return <div className="text-[14px] text-sub py-10 text-center">Loading…</div>;
+  }
 
   return (
     <div>
-      <h2 className="text-[20px] font-semibold tracking-tightest text-ink mb-1">Profile</h2>
-      <p className="text-[13px] text-sub mb-0">How you appear to your teammates.</p>
-
-      <Sect title="Avatar">
-        <div className="flex items-center gap-5">
-          <div
-            className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-semibold text-xl select-none shrink-0"
-            style={{ background: u.color, letterSpacing: '-0.02em' }}
-          >
-            {u.initials}
-          </div>
-          <div>
-            <Button variant="secondary" size="sm">Change photo</Button>
-            <p className="text-[12px] text-muted mt-2">JPG, PNG or GIF · max 4 MB</p>
+      {/* Avatar + identity header */}
+      <div className="flex items-center gap-5 pb-7 border-b border-divider">
+        <div className="relative shrink-0">
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt={user.name} className="w-20 h-20 rounded-2xl object-cover" />
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-elevated border border-line flex items-center justify-center text-ink font-semibold text-2xl select-none">
+              {initials}
+            </div>
+          )}
+          {editing && (
+            <button className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-panel border border-line flex items-center justify-center text-sub hover:text-ink transition shadow-sm">
+              <Icon name="compose" size={12} />
+            </button>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[20px] font-semibold tracking-tightest text-ink truncate">{user?.name}</div>
+          <div className="flex items-center gap-2.5 mt-1 flex-wrap">
+            <span className="text-[13px] text-sub">@{user?.username}</span>
+            {statusOption && (
+              <>
+                <span className="text-muted">·</span>
+                <span className="flex items-center gap-1.5 text-[13px] text-sub">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: statusOption.color }} />
+                  {statusOption.label}
+                </span>
+              </>
+            )}
           </div>
         </div>
-      </Sect>
+      </div>
 
-      <Sect title="Details">
-        <div className="space-y-4">
-          <FieldInput label="Display name" value={name} onChange={e => setName(e.target.value)} />
-          <div>
-            <label className="block text-[13px] font-medium text-ink mb-1.5">Email</label>
-            <div className="h-10 px-3 rounded-md bg-elevated border border-divider text-[14px] text-sub flex items-center select-none">
-              {u.name.toLowerCase().replace(' ', '.')}@acme.co
-            </div>
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-ink mb-1.5">Status</label>
-            <input
-              value={status}
-              onChange={e => setStatus(e.target.value)}
-              placeholder="🙂 What are you up to?"
-              className="w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[13px] font-medium text-ink mb-1.5">Role</label>
-              <div className="h-10 px-3 rounded-md bg-elevated border border-divider text-[14px] text-sub flex items-center">{u.role}</div>
-            </div>
-            <div>
-              <label className="block text-[13px] font-medium text-ink mb-1.5">Timezone</label>
-              <div className="h-10 px-3 rounded-md bg-elevated border border-divider text-[14px] text-sub flex items-center">{u.tz}</div>
-            </div>
-          </div>
+      {/* Field rows */}
+      <div className="divide-y divide-divider">
+        {/* Display name */}
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Display name</span>
+          {editing ? (
+            <input className={inputClass} value={name} onChange={e => setName(e.target.value)} placeholder="Your full name" />
+          ) : (
+            <span className="text-[14px] text-ink">{user?.name ?? '—'}</span>
+          )}
         </div>
-      </Sect>
+
+        {/* Email */}
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Email</span>
+          <span className="text-[14px] text-ink">{user?.email ?? '—'}</span>
+        </div>
+
+        {/* Username */}
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Username</span>
+          <span className="text-[14px] text-ink">@{user?.username ?? '—'}</span>
+        </div>
+
+        {/* Phone */}
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Phone</span>
+          {editing ? (
+            <input className={inputClass} type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+1 (555) 000-0000" />
+          ) : (
+            <span className="text-[14px] text-ink">{user?.phone || '—'}</span>
+          )}
+        </div>
+
+        {/* Status */}
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Status</span>
+          {editing ? (
+            <StatusSelect value={status} onChange={setStatus} />
+          ) : (
+            <span className="flex items-center gap-2 text-[14px] text-ink">
+              {statusOption ? (
+                <>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: statusOption.color }} />
+                  {statusOption.label}
+                </>
+              ) : '—'}
+            </span>
+          )}
+        </div>
+
+        {/* Timezone */}
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Timezone</span>
+          {editing ? (
+            <select className={selectClass} value={timezone} onChange={e => setTimezone(e.target.value)}>
+              {TIMEZONES.map(tz => (
+                <option key={tz} value={tz}>{tz.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-[14px] text-ink">{timezoneLabel}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end pt-4 gap-3">
+        {editing ? (
+          <>
+            <Button variant="secondary" onClick={cancel} disabled={updateProfile.isPending}>Cancel</Button>
+            <Button onClick={save} disabled={updateProfile.isPending}>
+              {updateProfile.isPending ? 'Saving…' : 'Save changes'}
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Icon name="compose" size={13} /> Edit profile
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
+// Security
+// ─────────────────────────────────────────
+
+function SecurityTab() {
+  const router = useRouter();
+  const toast = useToast();
+  const changePassword = useChangePassword();
+
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw,     setNewPw]     = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+
+  async function handleChangePassword() {
+    if (!currentPw || !newPw || !confirmPw) {
+      toast.warning('Please fill in all password fields.');
+      return;
+    }
+    if (newPw !== confirmPw) {
+      toast.error('New passwords do not match.');
+      return;
+    }
+    try {
+      await changePassword.mutateAsync({ currentPassword: currentPw, newPassword: newPw });
+      // Backend revoked all sessions but the HttpOnly cookies are still in the browser.
+      // Call logout so the backend sends Set-Cookie headers that clear them, otherwise
+      // the proxy will see the old access_token and redirect away from /login.
+      await authApi.logout().catch(() => {});
+      toast.success('Password changed', 'Please log in again.');
+      router.push('/login');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+    }
+  }
+
+  return (
+    <div>
+      <h2 className="text-[20px] font-semibold tracking-tightest text-ink mb-1">Security</h2>
+      <p className="text-[13px] text-sub mb-0">Manage your password and account security.</p>
 
       <Sect title="Change password">
         <div className="space-y-4">
-          <FieldInput label="Current password" type="password" placeholder="••••••••" />
-          <FieldInput label="New password" type="password" placeholder="••••••••" />
-          <FieldInput label="Confirm new password" type="password" placeholder="••••••••" />
+          <FieldInput
+            label="Current password"
+            type="password"
+            value={currentPw}
+            onChange={e => setCurrentPw(e.target.value)}
+            placeholder="••••••••"
+          />
+          <FieldInput
+            label="New password"
+            type="password"
+            value={newPw}
+            onChange={e => setNewPw(e.target.value)}
+            placeholder="••••••••"
+          />
+          <FieldInput
+            label="Confirm new password"
+            type="password"
+            value={confirmPw}
+            onChange={e => setConfirmPw(e.target.value)}
+            placeholder="••••••••"
+          />
+          <Button onClick={handleChangePassword} disabled={changePassword.isPending}>
+            {changePassword.isPending ? 'Updating…' : 'Update password'}
+          </Button>
         </div>
       </Sect>
-
-      <div className="pt-2 flex items-center gap-3">
-        <Button onClick={save}>
-          {saved ? <><Icon name="check" size={15} /> Saved!</> : 'Save changes'}
-        </Button>
-        {saved && <span className="text-[13px] text-sub anim-fade">Profile updated.</span>}
-      </div>
     </div>
   );
 }
@@ -800,6 +1070,7 @@ const NAV_GROUPS = [
     label: 'YOUR ACCOUNT',
     items: [
       { id: 'Profile',       icon: 'at'      },
+      { id: 'Security',      icon: 'shield'  },
       { id: 'Notifications', icon: 'bell'    },
       { id: 'Appearance',    icon: 'sliders' },
     ],
@@ -809,14 +1080,21 @@ const NAV_GROUPS = [
 interface Props {
   onClose: () => void;
   initialTab?: string;
+  onTabChange?: (tab: string) => void;
 }
 
-export default function SettingsOverlay({ onClose, initialTab = 'Profile' }: Props) {
+export default function SettingsOverlay({ onClose, initialTab = 'Profile', onTabChange }: Props) {
   const [tab, setTab] = useState(initialTab);
+
+  function handleTabChange(t: string) {
+    setTab(t);
+    onTabChange?.(t);
+  }
 
   function renderTab() {
     switch (tab) {
       case 'Profile':       return <ProfileTab />;
+      case 'Security':      return <SecurityTab />;
       case 'Notifications': return <NotificationsTab />;
       case 'Appearance':    return <AppearanceTab />;
       case 'General':       return <GeneralTab />;
@@ -855,7 +1133,7 @@ export default function SettingsOverlay({ onClose, initialTab = 'Profile' }: Pro
               {group.items.map(n => (
                 <button
                   key={n.id}
-                  onClick={() => setTab(n.id)}
+                  onClick={() => handleTabChange(n.id)}
                   className={`w-full flex items-center gap-2.5 px-3 h-9 rounded-md text-[14px] transition ${
                     tab === n.id ? 'bg-elevated text-ink' : 'text-sub hover:bg-elevated hover:text-ink'
                   }`}
