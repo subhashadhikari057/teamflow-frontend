@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface TooltipProps {
   label: string;
@@ -9,30 +10,55 @@ interface TooltipProps {
   children: React.ReactNode;
 }
 
-const POSITIONS: Record<string, React.CSSProperties> = {
-  top:    { bottom: '100%', left: '50%', transform: 'translateX(-50%)', marginBottom: 8 },
-  bottom: { top: '100%',   left: '50%', transform: 'translateX(-50%)', marginTop: 8 },
-  right:  { left: '100%',  top: '50%',  transform: 'translateY(-50%)', marginLeft: 8 },
-  left:   { right: '100%', top: '50%',  transform: 'translateY(-50%)', marginRight: 8 },
-};
-
 export default function Tooltip({ label, keys, side = 'top', children }: TooltipProps) {
-  const [show, setShow] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  function show() {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const GAP = 8;
+    let top = 0, left = 0;
+
+    if (side === 'bottom') {
+      top  = r.bottom + GAP;
+      left = r.left + r.width / 2;
+    } else if (side === 'top') {
+      top  = r.top - GAP;
+      left = r.left + r.width / 2;
+    } else if (side === 'left') {
+      top  = r.top + r.height / 2;
+      left = r.left - GAP;
+    } else {
+      top  = r.top + r.height / 2;
+      left = r.right + GAP;
+    }
+    setCoords({ top, left });
+  }
+
+  function hide() { setCoords(null); }
+
+  const transformMap: Record<string, string> = {
+    bottom: 'translateX(-50%)',
+    top:    'translateX(-50%) translateY(-100%)',
+    left:   'translateX(-100%) translateY(-50%)',
+    right:  'translateY(-50%)',
+  };
 
   return (
-    <div
-      className="relative inline-flex"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
+    <div ref={ref} className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide}>
       {children}
-      {show && (
-        <div className="absolute z-[120] whitespace-nowrap pointer-events-none anim-fade" style={POSITIONS[side]}>
+      {coords && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed z-[200] whitespace-nowrap pointer-events-none anim-fade"
+          style={{ top: coords.top, left: coords.left, transform: transformMap[side] }}
+        >
           <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-black border border-line text-xs text-ink shadow-lg">
             <span>{label}</span>
             {keys?.map((k, i) => <span key={i} className="kbd">{k}</span>)}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

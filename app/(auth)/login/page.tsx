@@ -49,7 +49,7 @@ export default function LoginPage() {
               className="w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition"
             />
           </div>
-          <Button size="lg" className="w-full" onClick={() => router.push('/')}>
+          <Button size="lg" className="w-full" onClick={() => router.push('/nomor')}>
             Log in
           </Button>
         </div>

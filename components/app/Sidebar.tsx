@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
@@ -30,7 +31,8 @@ function SidebarItem({
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2.5 rounded-md px-2.5 h-8 text-[14px] transition group ${
+      style={{ fontSize: 'var(--fs, 14px)' }}
+      className={`w-full flex items-center gap-2.5 rounded-md px-2.5 h-8 transition group ${
         active ? 'bg-elevated text-ink' : 'text-sub hover:bg-elevated hover:text-ink'
       } ${collapsed ? 'justify-center px-0' : ''}`}
     >
@@ -46,6 +48,7 @@ function SidebarItem({
 export default function Sidebar({
   collapsed, active, onSelect, openSearch, openSettings, openShortcuts, openProfile, openCompose,
 }: SidebarProps) {
+  const router = useRouter();
   const [chanOpen, setChanOpen] = useState(true);
   const [dmOpen, setDmOpen] = useState(true);
 
@@ -149,7 +152,8 @@ export default function Sidebar({
                   <button
                     key={c.id}
                     onClick={() => onSelect({ type: 'channel', id: c.id })}
-                    className={`w-full flex items-center gap-1.5 rounded-md px-2.5 h-7 text-[14px] transition ${
+                    style={{ fontSize: 'var(--fs, 14px)' }}
+                    className={`w-full flex items-center gap-1.5 rounded-md px-2.5 h-7 transition ${
                       isActive
                         ? 'bg-elevated text-ink'
                         : unread
@@ -202,7 +206,8 @@ export default function Sidebar({
                   <button
                     key={d.id}
                     onClick={() => onSelect({ type: 'dm', id: d.userId })}
-                    className={`w-full flex items-center gap-2 rounded-md px-2 h-8 text-[14px] transition ${
+                    style={{ fontSize: 'var(--fs, 14px)' }}
+                    className={`w-full flex items-center gap-2 rounded-md px-2 h-8 transition ${
                       isActive ? 'bg-elevated text-ink' : 'text-sub hover:bg-elevated hover:text-ink'
                     } ${collapsed ? 'justify-center px-0' : ''}`}
                   >
@@ -251,7 +256,7 @@ export default function Sidebar({
         {!collapsed && (
           <Tooltip label="Settings" side="top">
             <button
-              onClick={openSettings}
+              onClick={() => router.push('/settings?from=nomor')}
               className="w-8 h-8 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
             >
               <Icon name="settings" size={16} />

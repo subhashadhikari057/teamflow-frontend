@@ -9,6 +9,7 @@ import MessageBody from './MessageBody';
 import Composer from './Composer';
 import { CHANNELS, DMS, ENG_MESSAGES, USERS } from '@/lib/data';
 import type { Message } from '@/lib/types';
+import { useAppearance } from '@/lib/appearance-context';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -22,6 +23,8 @@ interface ChannelViewProps {
   openCall: () => void;
   openThread: (id: string) => void;
   openProfile: (userId: string) => void;
+  openInfo: () => void;
+  infoOpen: boolean;
 }
 
 function Reaction({ r }: { r: { emoji: string; count: number; by: string[] } }) {
@@ -49,81 +52,121 @@ function MessageRow({
 }) {
   const u = USERS[m.userId];
   const [hover, setHover] = useState(false);
+  const { density } = useAppearance();
 
+  const isCozy     = density === 'cozy';
+  const isCompact  = density === 'compact';
+  const avatarSize = isCompact ? 30 : 36;
+  const rowPy      = isCozy ? 'py-[3px]' : isCompact ? 'py-1' : 'py-1.5';
+
+  const extras = (
+    <>
+      {m.reactions && m.reactions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {m.reactions.map((r, i) => <Reaction key={i} r={r} />)}
+          <button className="lift inline-flex items-center justify-center w-7 h-6 rounded-md border border-line bg-panel text-muted hover:text-ink hover:border-[#555555] transition">
+            <Icon name="smile" size={13} />
+          </button>
+        </div>
+      )}
+      {m.thread && (
+        <button
+          onClick={() => onOpenThread(m.id)}
+          className="lift mt-2 inline-flex items-center gap-2 h-8 pl-1.5 pr-3 rounded-md border border-transparent hover:border-line hover:bg-panel transition"
+        >
+          <div className="flex -space-x-1.5">
+            {m.thread.replies.slice(0, 3).map((r) => (
+              <Avatar key={r.id} userId={r.userId} size={20} presence={false} ring />
+            ))}
+          </div>
+          <span className="text-[12px] font-semibold text-[#6ea8fe]">
+            {m.thread.replies.length} replies
+          </span>
+          <span className="text-[11px] text-muted">
+            Last reply {m.thread.replies[m.thread.replies.length - 1].time}
+          </span>
+          <Icon name="chevright" size={13} className="text-muted" />
+        </button>
+      )}
+    </>
+  );
+
+  const hoverActions = hover && (
+    <div className="absolute -top-3 right-4 flex items-center bg-panel border border-line rounded-md anim-fade overflow-hidden">
+      {(['smile', 'cornerreply', 'more'] as const).map((ic, i) => (
+        <button
+          key={ic}
+          onClick={ic === 'cornerreply' ? () => onOpenThread(m.id) : undefined}
+          className={`w-8 h-8 flex items-center justify-center text-sub hover:text-ink hover:bg-elevated transition ${
+            i > 0 ? 'border-l border-divider' : ''
+          }`}
+        >
+          <Icon name={ic} size={15} />
+        </button>
+      ))}
+    </div>
+  );
+
+  /* ── Cozy: no avatar, time left, sender+body inline ─────────────── */
+  if (isCozy) {
+    return (
+      <div
+        className={`group relative flex items-baseline gap-2 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        <span className="text-[11px] text-muted w-14 text-right shrink-0 select-none">{m.time}</span>
+        <button
+          onClick={() => onOpenProfile(m.userId)}
+          className="text-[13px] font-semibold text-ink hover:underline shrink-0"
+        >
+          {u.name}
+        </button>
+        <div className="min-w-0 flex-1" style={{ fontSize: 'var(--fs, 14px)' }}>
+          <MessageBody body={m.body} />
+          {extras}
+        </div>
+        {hoverActions}
+      </div>
+    );
+  }
+
+  /* ── Comfortable / Compact: avatar + stacked layout ─────────────── */
   return (
     <div
-      className="group relative flex gap-3 px-5 py-1.5 hover:bg-[#0c0c0c] transition rounded"
+      className={`group relative flex gap-3 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
       <button onClick={() => onOpenProfile(m.userId)} className="shrink-0 mt-0.5">
-        <Avatar userId={m.userId} size={36} presence={false} />
+        <Avatar userId={m.userId} size={avatarSize} presence={false} />
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <button
             onClick={() => onOpenProfile(m.userId)}
-            className="text-[14px] font-semibold text-ink hover:underline"
+            className="font-semibold text-ink hover:underline"
+            style={{ fontSize: 'var(--fs, 14px)' }}
           >
             {u.name}
           </button>
           <span className="text-[11px] text-muted">{m.time}</span>
           {m.edited && <span className="text-[11px] text-muted">(edited)</span>}
         </div>
-        <div className="mt-0.5">
+        <div className="mt-0.5" style={{ fontSize: 'var(--fs, 14px)' }}>
           <MessageBody body={m.body} />
         </div>
-        {m.reactions && m.reactions.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {m.reactions.map((r, i) => <Reaction key={i} r={r} />)}
-            <button className="lift inline-flex items-center justify-center w-7 h-6 rounded-md border border-line bg-panel text-muted hover:text-ink hover:border-[#555555] transition">
-              <Icon name="smile" size={13} />
-            </button>
-          </div>
-        )}
-        {m.thread && (
-          <button
-            onClick={() => onOpenThread(m.id)}
-            className="lift mt-2 inline-flex items-center gap-2 h-8 pl-1.5 pr-3 rounded-md border border-transparent hover:border-line hover:bg-panel transition"
-          >
-            <div className="flex -space-x-1.5">
-              {m.thread.replies.slice(0, 3).map((r) => (
-                <Avatar key={r.id} userId={r.userId} size={20} presence={false} ring />
-              ))}
-            </div>
-            <span className="text-[12px] font-semibold text-[#6ea8fe]">
-              {m.thread.replies.length} replies
-            </span>
-            <span className="text-[11px] text-muted">
-              Last reply {m.thread.replies[m.thread.replies.length - 1].time}
-            </span>
-            <Icon name="chevright" size={13} className="text-muted" />
-          </button>
-        )}
+        {extras}
       </div>
-      {/* Hover actions */}
-      {hover && (
-        <div className="absolute -top-3 right-4 flex items-center bg-panel border border-line rounded-md anim-fade overflow-hidden">
-          {(['smile', 'cornerreply', 'more'] as const).map((ic, i) => (
-            <button
-              key={ic}
-              onClick={ic === 'cornerreply' ? () => onOpenThread(m.id) : undefined}
-              className={`w-8 h-8 flex items-center justify-center text-sub hover:text-ink hover:bg-elevated transition ${
-                i > 0 ? 'border-l border-divider' : ''
-              }`}
-            >
-              <Icon name={ic} size={15} />
-            </button>
-          ))}
-        </div>
-      )}
+      {hoverActions}
     </div>
   );
 }
 
 export default function ChannelView({
-  active, onToggleSidebar, openSearch, openCall, openThread, openProfile,
+  active, onToggleSidebar, openSearch, openCall, openThread, openProfile, openInfo, infoOpen,
 }: ChannelViewProps) {
+  const { density } = useAppearance();
   const isDm = active.type === 'dm';
   const channel = !isDm ? CHANNELS.find((c) => c.id === active.id) : null;
   const dmUser = isDm ? USERS[active.id] : null;
@@ -216,17 +259,33 @@ export default function ChannelView({
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-2">
           {!isDm && (
-            <div className="hidden sm:flex items-center mr-2">
+            <div className="hidden sm:flex items-center gap-2 mr-1">
               <div className="flex -space-x-2">
                 {['sarah', 'marcus', 'priya', 'devon'].map((id) => (
                   <Avatar key={id} userId={id} size={24} presence={false} ring />
                 ))}
               </div>
-              <span className="ml-2 text-[12px] text-sub">{channel!.members}</span>
+              <span className="text-[12px] text-sub">{channel!.members}</span>
             </div>
           )}
+
+          <div className="w-px h-4 bg-divider hidden sm:block" />
+
+          <Tooltip label="Channel info" side="bottom">
+            <button
+              onClick={openInfo}
+              className={`w-8 h-8 rounded-md flex items-center justify-center transition ${
+                infoOpen ? 'bg-elevated text-ink' : 'text-sub hover:text-ink hover:bg-elevated'
+              }`}
+            >
+              <Icon name="info" size={16} />
+            </button>
+          </Tooltip>
+
+          <div className="w-px h-4 bg-divider" />
+
           <Tooltip label="Start call" side="bottom">
             <button
               onClick={openCall}
@@ -270,7 +329,7 @@ export default function ChannelView({
           </div>
         )}
 
-        <div className="space-y-0.5">
+        <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
           {messages.map((m) => (
             <MessageRow key={m.id} m={m} onOpenThread={openThread} onOpenProfile={openProfile} />
           ))}
