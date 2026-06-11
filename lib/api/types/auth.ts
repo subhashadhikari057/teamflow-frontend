@@ -26,6 +26,11 @@ export interface AuthUser {
   twoFactorEnabled: boolean;
   lastSeenAt?: string;
   createdAt: string;
+  currentWorkspace?: {
+    id: string;
+    slug: string;
+    name: string;
+  } | null;
 }
 
 export interface UpdateProfilePayload {
@@ -33,6 +38,10 @@ export interface UpdateProfilePayload {
   phone?: string;
   status?: UserStatus;
   timezone?: string;
+}
+
+export interface SetCurrentWorkspacePayload {
+  workspaceId: string;
 }
 
 export interface TokenPair {

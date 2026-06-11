@@ -38,7 +38,7 @@ export default function proxy(request: NextRequest) {
 
   // Already logged in and visiting auth pages
   if (hasToken && (pathname === '/login' || pathname === '/signup')) {
-    return NextResponse.redirect(new URL('/nomor', request.url));
+    return NextResponse.redirect(new URL('/workspace', request.url));
   }
 
   return NextResponse.next();

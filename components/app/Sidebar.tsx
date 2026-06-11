@@ -8,8 +8,8 @@ import Tooltip from '@/components/primitives/Tooltip';
 import { CHANNELS, DMS, USERS } from '@/lib/data';
 import { useLogout, useCurrentUser } from '@/hooks/auth';
 import { useToast } from '@/lib/toast-context';
-import { getAuthErrorMessage } from '@/lib/api/errors';
 import type { UserStatus } from '@/lib/api/types';
+import { getSettingsPath } from '@/lib/workspace-routing';
 
 const STATUS_COLOR: Record<UserStatus, string> = {
   ONLINE:         '#22c55e',
@@ -80,6 +80,9 @@ export default function Sidebar({
   const toast   = useToast();
   const logout  = useLogout();
   const me      = useCurrentUser();
+  const workspaceName = me?.currentWorkspace?.name ?? 'Nomor';
+  const workspaceSlug = me?.currentWorkspace?.slug ?? null;
+  const workspaceInitial = workspaceName.trim().charAt(0).toUpperCase() || 'N';
   const [chanOpen, setChanOpen] = useState(true);
   const [dmOpen, setDmOpen] = useState(true);
 
@@ -107,12 +110,12 @@ export default function Sidebar({
           }`}
         >
           <div className="w-8 h-8 rounded-md bg-white text-black flex items-center justify-center text-[14px] font-bold shrink-0">
-            N
+            {workspaceInitial}
           </div>
           {!collapsed && (
             <>
               <span className="text-[15px] font-semibold text-ink tracking-tightest flex-1 text-left truncate">
-                Nomor
+                {workspaceName}
               </span>
               <Icon name="chevdown" size={15} className="text-sub" />
             </>
@@ -319,7 +322,7 @@ export default function Sidebar({
           <>
             <Tooltip label="Settings" side="top">
               <button
-                onClick={() => router.push('/settings?from=nomor')}
+                onClick={() => router.push(getSettingsPath(workspaceSlug))}
                 className="w-7 h-7 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
               >
                 <Icon name="settings" size={15} />

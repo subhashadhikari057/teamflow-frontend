@@ -19,6 +19,7 @@ import type {
   TwoFactorBackupCodesResponse,
   TwoFactorEnableResponse,
   UpdateProfilePayload,
+  SetCurrentWorkspacePayload,
   Verify2FAPayload,
   VerifyEmailPayload,
 } from './types';
@@ -32,6 +33,7 @@ export const authApi = {
   // Logout: backend reads refresh token from cookie, clears it
   logout:     ()                                => post<ActionResponse>('/auth/logout'),
   me:         ()                                => get<AuthUser>('/auth/me'),
+  setCurrentWorkspace: (data: SetCurrentWorkspacePayload) => patch<AuthUser>('/auth/current-workspace', data),
   updateProfile: (data: UpdateProfilePayload)  => patch<AuthUser>('/auth/profile', data),
 
   // ─── Email verification ────────────────────────────────────────────────

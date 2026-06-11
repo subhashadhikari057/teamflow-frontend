@@ -11,6 +11,7 @@ import { authApi } from '@/lib/api/auth';
 import { useRegister } from '@/hooks/auth';
 import { useToast } from '@/lib/toast-context';
 import { getAuthErrorMessage } from '@/lib/api/errors';
+import { setOauthIntent } from '@/lib/auth-session-hint';
 
 export default function SignUpPage() {
   const router  = useRouter();
@@ -26,8 +27,9 @@ export default function SignUpPage() {
   async function handleGoogleSignup() {
     setGoogleLoading(true);
     try {
-      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/nomor' });
-      localStorage.setItem('oauth_welcome', '1');
+      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/workspace', clientState: 'signup' });
+      localStorage.setItem('oauth_welcome', 'google');
+      setOauthIntent('signup');
       window.location.href = url;
     } catch (err) {
       setGoogleLoading(false);

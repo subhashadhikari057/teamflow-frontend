@@ -36,9 +36,9 @@ export function useVerify2FA() {
     mutationFn: authApi.verify2FA,
     onSuccess: (data) => {
       if (!data.requiresTwoFactor) {
-        // Backend set cookies — hydrate cache
+        // Backend set cookies — force a fresh /auth/me on app boot
         setSessionHint();
-        qc.setQueryData(ME_KEY, data.session.user);
+        qc.removeQueries({ queryKey: ME_KEY });
       }
     },
   });

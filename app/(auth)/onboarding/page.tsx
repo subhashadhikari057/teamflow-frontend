@@ -1,17 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import AuthShell from '@/components/auth/AuthShell';
 import Field from '@/components/auth/Field';
 import Stepper from '@/components/auth/Stepper';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
-
-const ALL_CHANNELS = ['general', 'marketing', 'engineering', 'design'];
+import { useMe, ME_KEY } from '@/hooks/auth';
+import { authApi } from '@/lib/api/auth';
+import { workspacesApi } from '@/lib/api/workspaces';
+import { canUsePendingOauthSession, hasSessionHint } from '@/lib/auth-session-hint';
+import { useToast } from '@/lib/toast-context';
+import { getWorkspacePath } from '@/lib/workspace-routing';
 
 function StepWorkspace({
-  wsName, setWsName, onNext,
+  wsName,
+  setWsName,
+  onNext,
 }: {
   wsName: string;
   setWsName: (v: string) => void;
@@ -43,7 +50,10 @@ function StepWorkspace({
 }
 
 function StepInvite({
-  invites, setInvites, onNext, onSkip,
+  invites,
+  setInvites,
+  onNext,
+  onSkip,
 }: {
   invites: string[];
   setInvites: (v: string[]) => void;
@@ -80,50 +90,41 @@ function StepInvite({
           Skip for now
         </Button>
         <Button size="lg" className="flex-1" onClick={onNext}>
-          Send invites
+          Continue
         </Button>
       </div>
     </>
   );
 }
 
-function StepChannels({
-  channels, toggleChannel, onFinish,
+function StepLaunch({
+  workspaceName,
+  isPending,
+  onFinish,
 }: {
-  channels: string[];
-  toggleChannel: (c: string) => void;
+  workspaceName: string;
+  isPending: boolean;
   onFinish: () => void;
 }) {
   return (
     <>
-      <h1 className="text-[22px] font-semibold tracking-tightest text-ink">Pick your first channels</h1>
-      <p className="text-[13.5px] text-sub mt-1.5 mb-6">Channels keep conversations organized by topic.</p>
-      <div className="space-y-2 mb-6">
-        {ALL_CHANNELS.map((c) => {
-          const on = channels.includes(c);
-          return (
-            <button
-              key={c}
-              onClick={() => toggleChannel(c)}
-              className={`w-full flex items-center gap-3 px-3 h-11 rounded-md border transition text-left cursor-pointer ${
-                on ? 'border-white bg-elevated' : 'border-line hover:border-[#555555]'
-              }`}
-            >
-              <span
-                className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
-                  on ? 'bg-white border-white' : 'border-line'
-                }`}
-              >
-                {on && <Icon name="check" size={11} className="text-black" strokeWidth={3} />}
-              </span>
-              <span className="text-muted">#</span>
-              <span className="text-[14px] text-ink">{c}</span>
-            </button>
-          );
-        })}
+      <h1 className="text-[22px] font-semibold tracking-tightest text-ink">You&apos;re almost in</h1>
+      <p className="text-[13.5px] text-sub mt-1.5 mb-6">
+        We&apos;ll create <span className="text-ink font-medium">{workspaceName || 'your workspace'}</span> with a default <span className="text-ink font-medium">#general</span> channel.
+      </p>
+      <div className="rounded-md border border-line bg-elevated p-4 mb-6">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-md border border-line bg-panel flex items-center justify-center shrink-0">
+            <Icon name="hash" size={16} />
+          </div>
+          <div>
+            <p className="text-[14px] font-medium text-ink">Default channel</p>
+            <p className="text-[13px] text-sub mt-1">Every new workspace starts with <span className="text-ink">#general</span>. You can add more channels after setup.</p>
+          </div>
+        </div>
       </div>
-      <Button size="lg" className="w-full" onClick={onFinish} disabled={channels.length === 0}>
-        Launch Teamflow
+      <Button size="lg" className="w-full" onClick={onFinish} disabled={isPending}>
+        {isPending ? 'Creating workspace…' : 'Launch Teamflow'}
       </Button>
     </>
   );
@@ -131,13 +132,91 @@ function StepChannels({
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const { data: me, isLoading: isMeLoading, isError: isMeError } = useMe();
   const [step, setStep] = useState(0);
   const [wsName, setWsName] = useState('');
   const [invites, setInvites] = useState(['', '']);
-  const [channels, setChannels] = useState(['general']);
 
-  const toggleChannel = (c: string) =>
-    setChannels((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]);
+  const workspacesQuery = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: workspacesApi.list,
+    enabled: Boolean(me),
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  const onboarding = useMutation({
+    mutationFn: workspacesApi.createOnboarding,
+  });
+
+  const normalizedInvites = useMemo(
+    () =>
+      invites
+        .map((value) => value.trim())
+        .filter((value, index, all) => value.length > 0 && all.indexOf(value) === index),
+    [invites],
+  );
+
+  useEffect(() => {
+    if (!hasSessionHint() && !canUsePendingOauthSession()) {
+      router.replace('/login');
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (isMeError) {
+      router.replace('/login');
+    }
+  }, [isMeError, router]);
+
+  useEffect(() => {
+    if (me?.currentWorkspace?.id) {
+      router.replace(getWorkspacePath(me.currentWorkspace.slug));
+      return;
+    }
+
+    if (workspacesQuery.isSuccess && workspacesQuery.data.length > 0) {
+      router.replace(getWorkspacePath(workspacesQuery.data[0].slug));
+    }
+  }, [me?.currentWorkspace, router, workspacesQuery.data, workspacesQuery.isSuccess]);
+
+  async function handleFinish() {
+    if (!wsName.trim()) {
+      toast.warning('Please enter a workspace name.');
+      return;
+    }
+
+    try {
+      const result = await onboarding.mutateAsync({
+        name: wsName.trim(),
+        invites: normalizedInvites.map((email) => ({ email })),
+      });
+
+      const updatedUser = await authApi.setCurrentWorkspace({
+        workspaceId: result.workspace.id,
+      });
+
+      queryClient.setQueryData(ME_KEY, updatedUser);
+      queryClient.setQueryData(['workspaces'], [result.workspace]);
+
+      toast.success('Workspace ready', `Welcome to ${result.workspace.name}.`);
+      router.push(getWorkspacePath(updatedUser.currentWorkspace?.slug ?? result.workspace.slug));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'We could not finish onboarding.');
+    }
+  }
+
+  if (isMeLoading || workspacesQuery.isLoading) {
+    return (
+      <AuthShell>
+        <div className="rounded-lg border border-line bg-panel p-7">
+          <p className="text-[14px] text-sub">Preparing your workspace setup…</p>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell>
@@ -155,10 +234,10 @@ export default function OnboardingPage() {
           />
         )}
         {step === 2 && (
-          <StepChannels
-            channels={channels}
-            toggleChannel={toggleChannel}
-            onFinish={() => router.push('/nomor')}
+          <StepLaunch
+            workspaceName={wsName.trim()}
+            isPending={onboarding.isPending}
+            onFinish={handleFinish}
           />
         )}
       </div>

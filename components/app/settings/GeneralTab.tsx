@@ -1,13 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useCurrentUser } from '@/hooks/auth';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import { Sect, FieldInput } from './_shared';
 
 export default function GeneralTab() {
-  const [wsName, setWsName] = useState('Nomor');
+  const me = useCurrentUser();
+  const workspaceName = me?.currentWorkspace?.name ?? 'Workspace';
+  const workspaceSlug = me?.currentWorkspace?.slug ?? 'workspace';
+  const workspaceInitial = workspaceName.trim().charAt(0).toUpperCase() || 'N';
+  const [wsName, setWsName] = useState(workspaceName);
   const [saved,  setSaved]  = useState(false);
+
+  useEffect(() => {
+    setWsName(workspaceName);
+  }, [workspaceName]);
 
   function save() { setSaved(true); setTimeout(() => setSaved(false), 2000); }
 
@@ -20,7 +29,7 @@ export default function GeneralTab() {
         <div className="space-y-5">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl select-none shrink-0" style={{ letterSpacing: '-0.02em' }}>
-              N
+              {workspaceInitial}
             </div>
             <div>
               <Button variant="secondary" size="sm">Change icon</Button>
@@ -32,7 +41,7 @@ export default function GeneralTab() {
             <label className="block text-[13px] font-medium text-ink mb-1.5">Workspace URL</label>
             <div className="flex items-center h-10 rounded-md bg-elevated border border-divider overflow-hidden">
               <span className="pl-3 text-[14px] text-muted">teamflow.io/</span>
-              <span className="text-[14px] text-sub pr-3">nomor</span>
+              <span className="text-[14px] text-sub pr-3">{workspaceSlug}</span>
             </div>
           </div>
         </div>
@@ -83,7 +92,7 @@ export default function GeneralTab() {
           <div className="flex items-center justify-between pt-4">
             <div>
               <div className="text-[14px] text-danger">Delete workspace</div>
-              <div className="text-[12px] text-sub mt-0.5">Permanently deletes Nomor and all its data</div>
+              <div className="text-[12px] text-sub mt-0.5">Permanently deletes {workspaceName} and all its data</div>
             </div>
             <Button variant="danger" size="sm">Delete workspace</Button>
           </div>

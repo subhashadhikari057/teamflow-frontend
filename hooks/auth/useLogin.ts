@@ -11,9 +11,9 @@ export function useLogin() {
     mutationFn: authApi.login,
     onSuccess: (data) => {
       if (!data.requiresTwoFactor) {
-        // Backend set HttpOnly cookies — just hydrate the 'me' cache
+        // Backend set HttpOnly cookies — force a fresh /auth/me on app boot
         setSessionHint();
-        qc.setQueryData(ME_KEY, data.session.user);
+        qc.removeQueries({ queryKey: ME_KEY });
       }
       // requiresTwoFactor === true: caller reads data.challengeToken and goes to 2FA step
     },

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Sidebar from '@/components/app/Sidebar';
 import ChannelView from '@/components/app/ChannelView';
 import ThreadPanel from '@/components/app/ThreadPanel';
@@ -14,6 +15,11 @@ import { useToast } from '@/lib/toast-context';
 import { AppearanceContext } from '@/lib/appearance-context';
 import type { Density, FontSize } from '@/lib/appearance-context';
 import { CHANNELS } from '@/lib/data';
+import { useMe, ME_KEY } from '@/hooks/auth';
+import { authApi } from '@/lib/api/auth';
+import { workspacesApi } from '@/lib/api/workspaces';
+import { clearOauthIntent, getOauthIntent, hasSessionHint } from '@/lib/auth-session-hint';
+import { getWorkspacePath } from '@/lib/workspace-routing';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -33,7 +39,27 @@ interface CallState {
   sharing: boolean;
 }
 
-export default function WorkspacePage() {
+interface WorkspacePageProps {
+  routeWorkspaceSlug: string;
+}
+
+export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { data: me, isLoading: isMeLoading, isError: isMeError } = useMe();
+  const workspacesQuery = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: workspacesApi.list,
+    enabled: Boolean(me),
+    retry: false,
+    staleTime: 60_000,
+  });
+  const setCurrentWorkspace = useMutation({
+    mutationFn: authApi.setCurrentWorkspace,
+    onSuccess: (user) => {
+      queryClient.setQueryData(ME_KEY, user);
+    },
+  });
   const [active, setActive] = useState<ActiveView>({ type: 'channel', id: 'engineering' });
   const [threadId, setThreadId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -41,41 +67,93 @@ export default function WorkspacePage() {
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [call, setCall] = useState<CallState>({ open: false, muted: false, camOff: false, sharing: false });
   const { show: flashToast } = useToast();
-  const [density,  setDensityRaw]  = useState<Density>('comfortable');
+  const [density, setDensityRaw] = useState<Density>('comfortable');
   const [fontSize, setFontSizeRaw] = useState<FontSize>('default');
-  const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const hasUserWithoutWorkspace = Boolean(me && !me.currentWorkspace?.id);
+  const workspacePath = getWorkspacePath(me?.currentWorkspace?.slug);
+
 
   useEffect(() => {
-    const d = localStorage.getItem('tf-density')  as Density  | null;
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasSessionHint()) {
+      router.replace('/login');
+    }
+  }, [router]);
+
+  useEffect(() => {
+    if (isMeError) {
+      router.replace('/login');
+    }
+  }, [isMeError, router]);
+
+  useEffect(() => {
+    if (!me || me.currentWorkspace?.id || !workspacesQuery.isSuccess || setCurrentWorkspace.isPending) {
+      return;
+    }
+
+    const oauthIntent = getOauthIntent();
+
+    if (oauthIntent === 'signup') {
+      clearOauthIntent();
+      router.replace('/onboarding');
+      return;
+    }
+
+    if (workspacesQuery.data.length === 0) {
+      clearOauthIntent();
+      router.replace('/onboarding');
+      return;
+    }
+
+    clearOauthIntent();
+    void setCurrentWorkspace.mutateAsync({
+      workspaceId: workspacesQuery.data[0].id,
+    });
+  }, [
+    me,
+    router,
+    setCurrentWorkspace,
+    workspacesQuery.data,
+    workspacesQuery.isSuccess,
+  ]);
+
+  useEffect(() => {
+    if (!me?.currentWorkspace?.slug) {
+      return;
+    }
+
+    if (routeWorkspaceSlug !== me.currentWorkspace.slug) {
+      router.replace(workspacePath);
+    }
+  }, [me?.currentWorkspace?.slug, routeWorkspaceSlug, router, workspacePath]);
+
+  useEffect(() => {
+    const d = localStorage.getItem('tf-density') as Density | null;
     const f = localStorage.getItem('tf-fontsize') as FontSize | null;
     if (d) setDensityRaw(d);
     if (f) setFontSizeRaw(f);
 
-    const params = new URLSearchParams(window.location.search);
-    const oauthProvider = params.get('oauth');
     const oauthWelcome = localStorage.getItem('oauth_welcome');
 
-    if (oauthProvider === 'google_success' || oauthProvider === 'github_success' || oauthWelcome) {
+    if (oauthWelcome) {
       localStorage.removeItem('oauth_welcome');
-      const providerName = oauthProvider === 'github_success' ? 'GitHub' : 'Google';
+      const providerName = oauthWelcome === 'github' ? 'GitHub' : 'Google';
       flashToast(`Signed in with ${providerName}`, {
         type: 'success',
         description: 'Welcome to Teamflow!',
       });
-
-      if (oauthProvider) {
-        router.replace('/nomor');
-      }
     }
-  }, [flashToast, router]);
+  }, [flashToast]);
 
-
-  const setDensity  = (d: Density)  => { setDensityRaw(d);  localStorage.setItem('tf-density',  d); };
+  const setDensity = (d: Density) => { setDensityRaw(d); localStorage.setItem('tf-density', d); };
   const setFontSize = (f: FontSize) => { setFontSizeRaw(f); localStorage.setItem('tf-fontsize', f); };
 
   const FONT_MAP: Record<FontSize, string> = { small: '13px', default: '14px', large: '16px' };
 
-  // Auto-collapse on small screens
   useEffect(() => {
     const check = () => setCollapsed(window.innerWidth < 768);
     check();
@@ -112,7 +190,6 @@ export default function WorkspacePage() {
     flashToast('New message');
   }, [selectDm, flashToast]);
 
-  // Global keyboard handler
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
@@ -121,7 +198,6 @@ export default function WorkspacePage() {
       const ctrl = e.ctrlKey || e.metaKey;
       const modalOpen = ov.search || ov.shortcuts || call.open || ov.info;
 
-      // Toggle shortcuts: "?" or Ctrl+/
       if ((k === '?' && !typing) || (ctrl && k === '/')) {
         e.preventDefault();
         setOv((o) => ({ ...o, search: false, shortcuts: !o.shortcuts }));
@@ -175,73 +251,94 @@ export default function WorkspacePage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [ov, call, threadId, cycleChannel, jumpChannel, flashToast, openCompose, selectChannel, selectDm]);
 
+  if (
+    !mounted ||
+    isMeLoading ||
+    (hasUserWithoutWorkspace && (workspacesQuery.isLoading || setCurrentWorkspace.isPending))
+  ) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center px-6">
+        <div className="w-full max-w-md rounded-2xl border border-line bg-panel p-6">
+          <p className="text-[14px] text-sub">
+            {setCurrentWorkspace.isPending
+              ? 'Opening your workspace…'
+              : 'Checking your workspace…'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!me?.currentWorkspace?.id) {
+    return null;
+  }
+
   return (
     <AppearanceContext.Provider value={{ density, fontSize, setDensity, setFontSize }}>
-    <div className="h-screen flex overflow-hidden" style={{ '--fs': FONT_MAP[fontSize] } as React.CSSProperties}>
-      <Sidebar
-        collapsed={collapsed}
-        active={active}
-        onSelect={onSelect}
-        openSearch={() => setOv((o) => ({ ...o, search: true }))}
-        openSettings={() => {}}
-        openShortcuts={() => setOv((o) => ({ ...o, shortcuts: true }))}
-        openProfile={setProfileUser}
-        openCompose={openCompose}
-      />
-
-      <ChannelView
-        active={active}
-        onToggleSidebar={() => setCollapsed((c) => !c)}
-        openSearch={() => setOv((o) => ({ ...o, search: true }))}
-        openCall={() => setCall((c) => ({ ...c, open: true }))}
-        openThread={setThreadId}
-        openProfile={setProfileUser}
-        openInfo={() => setOv((o) => ({ ...o, info: !o.info }))}
-        infoOpen={ov.info}
-      />
-
-      {ov.info && (
-        <ChannelInfoPanel
+      <div className="h-screen flex overflow-hidden" style={{ '--fs': FONT_MAP[fontSize] } as React.CSSProperties}>
+        <Sidebar
+          collapsed={collapsed}
           active={active}
-          onClose={() => setOv((o) => ({ ...o, info: false }))}
-          onOpenProfile={setProfileUser}
+          onSelect={onSelect}
+          openSearch={() => setOv((o) => ({ ...o, search: true }))}
+          openSettings={() => undefined}
+          openShortcuts={() => setOv((o) => ({ ...o, shortcuts: true }))}
+          openProfile={setProfileUser}
+          openCompose={openCompose}
         />
-      )}
 
-      {threadId && (
-        <ThreadPanel
-          messageId={threadId}
-          onClose={() => setThreadId(null)}
-          onOpenProfile={setProfileUser}
+        <ChannelView
+          active={active}
+          onToggleSidebar={() => setCollapsed((c) => !c)}
+          openSearch={() => setOv((o) => ({ ...o, search: true }))}
+          openCall={() => setCall((c) => ({ ...c, open: true }))}
+          openThread={setThreadId}
+          openProfile={setProfileUser}
+          openInfo={() => setOv((o) => ({ ...o, info: !o.info }))}
+          infoOpen={ov.info}
         />
-      )}
 
-      {ov.search && (
-        <SearchOverlay
-          onClose={() => setOv((o) => ({ ...o, search: false }))}
-          onSelectChannel={selectChannel}
-          onSelectDm={selectDm}
-        />
-      )}
-      {ov.shortcuts && (
-        <ShortcutsOverlay onClose={() => setOv((o) => ({ ...o, shortcuts: false }))} />
-      )}
-      {call.open && (
-        <CallOverlay
-          state={call}
-          setState={setCall}
-          onEnd={() => { setCall((c) => ({ ...c, open: false })); flashToast('Call ended'); }}
-        />
-      )}
-      {profileUser && (
-        <ProfilePopover
-          userId={profileUser}
-          onClose={() => setProfileUser(null)}
-          onMessage={(id) => { setProfileUser(null); selectDm(id); }}
-        />
-      )}
+        {ov.info && (
+          <ChannelInfoPanel
+            active={active}
+            onClose={() => setOv((o) => ({ ...o, info: false }))}
+            onOpenProfile={setProfileUser}
+          />
+        )}
 
-    </div>
+        {threadId && (
+          <ThreadPanel
+            messageId={threadId}
+            onClose={() => setThreadId(null)}
+            onOpenProfile={setProfileUser}
+          />
+        )}
+
+        {ov.search && (
+          <SearchOverlay
+            onClose={() => setOv((o) => ({ ...o, search: false }))}
+            onSelectChannel={selectChannel}
+            onSelectDm={selectDm}
+          />
+        )}
+        {ov.shortcuts && (
+          <ShortcutsOverlay onClose={() => setOv((o) => ({ ...o, shortcuts: false }))} />
+        )}
+        {call.open && (
+          <CallOverlay
+            state={call}
+            setState={setCall}
+            onEnd={() => { setCall((c) => ({ ...c, open: false })); flashToast('Call ended'); }}
+          />
+        )}
+        {profileUser && (
+          <ProfilePopover
+            userId={profileUser}
+            onClose={() => setProfileUser(null)}
+            onMessage={(id) => { setProfileUser(null); selectDm(id); }}
+          />
+        )}
+      </div>
     </AppearanceContext.Provider>
   );
 }

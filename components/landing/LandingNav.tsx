@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Logo from '@/components/primitives/Logo';
 import { useMe } from '@/hooks/auth/useMe';
+import { getWorkspacePath } from '@/lib/workspace-routing';
 
 const NAV_LINKS = [
   { label: 'Features',  href: '/#features' },
@@ -17,6 +18,7 @@ export default function LandingNav() {
   const [mounted, setMounted] = useState(false);
   const { data: user, isLoading: isAuthLoading } = useMe();
   const isLoggedIn = Boolean(user);
+  const workspaceHref = getWorkspacePath(user?.currentWorkspace?.slug);
 
   useEffect(() => {
     setMounted(true);
@@ -26,7 +28,7 @@ export default function LandingNav() {
     if (isLoggedIn) {
       return (
         <Link
-          href="/nomor"
+          href={workspaceHref}
           className="bg-white text-black px-4 py-2 rounded-full text-[13.5px] font-medium hover:bg-[#e8e8e8] transition duration-300"
           style={{ boxShadow: '0 0 28px 6px rgba(255,255,255,0.45)' }}
         >
@@ -64,7 +66,7 @@ export default function LandingNav() {
     if (isLoggedIn) {
       return (
         <Link
-          href="/nomor"
+          href={workspaceHref}
           onClick={() => setOpen(false)}
           className="w-full text-center bg-white text-black px-4 py-2.5 rounded-full text-[14px] font-medium hover:bg-[#e8e8e8] transition"
           style={{ boxShadow: '0 0 22px 5px rgba(255,255,255,0.4)' }}

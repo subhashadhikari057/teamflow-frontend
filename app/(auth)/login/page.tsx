@@ -12,6 +12,22 @@ import { useToast } from '@/lib/toast-context';
 import { useLogin, useVerify2FA } from '@/hooks/auth';
 import { getAuthErrorMessage } from '@/lib/api/errors';
 import { authApi } from '@/lib/api/auth';
+import { getWorkspacePath } from '@/lib/workspace-routing';
+import { setOauthIntent } from '@/lib/auth-session-hint';
+
+async function resolvePostAuthPath(fallbackPath: string): Promise<string> {
+  if (fallbackPath !== '/workspace') {
+    return fallbackPath;
+  }
+
+  const user = await authApi.me();
+
+  if (user.currentWorkspace?.slug) {
+    return getWorkspacePath(user.currentWorkspace.slug);
+  }
+
+  return '/onboarding';
+}
 
 // ─── 2FA step ─────────────────────────────────────────────────────────────────
 
@@ -75,7 +91,7 @@ function TwoFactorStep({
       if (!hasPendingOauthWelcome) {
         toast.success('Logged in', 'Welcome back!');
       }
-      router.push(redirectTo);
+      router.push(await resolvePostAuthPath(redirectTo));
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
       setDigits(['', '', '', '', '', '']);
@@ -171,8 +187,9 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
   async function handleGoogleLogin() {
     setGoogleLoading(true);
     try {
-      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/nomor' });
-      localStorage.setItem('oauth_welcome', '1');
+      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/workspace', clientState: 'login' });
+      localStorage.setItem('oauth_welcome', 'google');
+      setOauthIntent('login');
       window.location.href = url;
     } catch (err) {
       setGoogleLoading(false);
@@ -189,7 +206,7 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
         return;
       }
       toast.success('Logged in', 'Welcome back!');
-      router.push('/nomor');
+      router.push(await resolvePostAuthPath('/workspace'));
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
     }
@@ -253,7 +270,7 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
 
 export default function LoginPage() {
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
-  const [redirectTo, setRedirectTo] = useState('/nomor');
+  const [redirectTo, setRedirectTo] = useState('/workspace');
   const toast = useToast();
 
   useEffect(() => {
