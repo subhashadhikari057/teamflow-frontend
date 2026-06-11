@@ -1,3 +1,5 @@
+import { clearSessionHint } from '@/lib/auth-session-hint';
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5001/api';
 
 // ─── Error type ────────────────────────────────────────────────────────────
@@ -52,13 +54,20 @@ async function doRefresh(): Promise<boolean> {
   try {
     // Refresh token comes from the HttpOnly cookie automatically.
     // Backend reads it from the cookie and sets new cookies in the response.
-    await fetch(`${BASE_URL}/auth/refresh`, {
+    const res = await fetch(`${BASE_URL}/auth/refresh`, {
       method:      'POST',
       credentials: 'include',
       headers:     { 'Content-Type': 'application/json' },
     });
+
+    if (!res.ok) {
+      clearSessionHint();
+      return false;
+    }
+
     return true;
   } catch {
+    clearSessionHint();
     return false;
   }
 }
@@ -74,7 +83,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       refreshPromise = doRefresh().finally(() => { refreshPromise = null; });
     }
     const ok = await refreshPromise;
-    if (!ok) throw error;
+    if (!ok) {
+      clearSessionHint();
+      throw error;
+    }
 
     return request<T>(path, init);
   }

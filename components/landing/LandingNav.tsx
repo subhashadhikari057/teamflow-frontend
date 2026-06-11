@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Logo from '@/components/primitives/Logo';
+import { useMe } from '@/hooks/auth/useMe';
 
 const NAV_LINKS = [
   { label: 'Features',  href: '/#features' },
@@ -13,6 +14,85 @@ const NAV_LINKS = [
 
 export default function LandingNav() {
   const [open, setOpen] = useState(false);
+  const { data: user, isLoading: isAuthLoading } = useMe();
+  const isLoggedIn = Boolean(user);
+
+  function renderDesktopActions() {
+    if (isLoggedIn) {
+      return (
+        <Link
+          href="/nomor"
+          className="bg-white text-black px-4 py-2 rounded-full text-[13.5px] font-medium hover:bg-[#e8e8e8] transition duration-300"
+          style={{ boxShadow: '0 0 28px 6px rgba(255,255,255,0.45)' }}
+        >
+          Go to workspace
+        </Link>
+      );
+    }
+
+    if (isAuthLoading) {
+      return (
+        <div className="h-[38px] w-[232px] rounded-full border border-line bg-elevated/40" aria-hidden="true" />
+      );
+    }
+
+    return (
+      <>
+        <Link
+          href="/login"
+          className="border border-line hover:bg-elevated px-4 py-2 rounded-full text-[13.5px] font-medium transition text-sub hover:text-ink"
+        >
+          Log in
+        </Link>
+        <Link
+          href="/signup"
+          className="bg-white text-black px-4 py-2 rounded-full text-[13.5px] font-medium hover:bg-[#e8e8e8] transition duration-300"
+          style={{ boxShadow: '0 0 28px 6px rgba(255,255,255,0.45)' }}
+        >
+          Get Started
+        </Link>
+      </>
+    );
+  }
+
+  function renderMobileActions() {
+    if (isLoggedIn) {
+      return (
+        <Link
+          href="/nomor"
+          onClick={() => setOpen(false)}
+          className="w-full text-center bg-white text-black px-4 py-2.5 rounded-full text-[14px] font-medium hover:bg-[#e8e8e8] transition"
+          style={{ boxShadow: '0 0 22px 5px rgba(255,255,255,0.4)' }}
+        >
+          Go to workspace
+        </Link>
+      );
+    }
+
+    if (isAuthLoading) {
+      return <div className="h-[42px] w-full rounded-full border border-line bg-elevated/40" aria-hidden="true" />;
+    }
+
+    return (
+      <>
+        <Link
+          href="/login"
+          onClick={() => setOpen(false)}
+          className="w-full text-center border border-line hover:bg-elevated px-4 py-2.5 rounded-full text-[14px] font-medium transition text-sub hover:text-ink"
+        >
+          Log in
+        </Link>
+        <Link
+          href="/signup"
+          onClick={() => setOpen(false)}
+          className="w-full text-center bg-white text-black px-4 py-2.5 rounded-full text-[14px] font-medium hover:bg-[#e8e8e8] transition"
+          style={{ boxShadow: '0 0 22px 5px rgba(255,255,255,0.4)' }}
+        >
+          Get Started
+        </Link>
+      </>
+    );
+  }
 
   return (
     <div className="sticky top-0 z-50 px-4 pt-3 flex justify-center">
@@ -45,19 +125,7 @@ export default function LandingNav() {
 
         {/* Desktop CTAs */}
         <div className="hidden md:flex items-center gap-3">
-          <Link
-            href="/login"
-            className="border border-line hover:bg-elevated px-4 py-2 rounded-full text-[13.5px] font-medium transition text-sub hover:text-ink"
-          >
-            Log in
-          </Link>
-          <Link
-            href="/signup"
-            className="bg-white text-black px-4 py-2 rounded-full text-[13.5px] font-medium hover:bg-[#e8e8e8] transition duration-300"
-            style={{ boxShadow: '0 0 28px 6px rgba(255,255,255,0.45)' }}
-          >
-            Get Started
-          </Link>
+          {renderDesktopActions()}
         </div>
 
         {/* Mobile hamburger */}
@@ -90,21 +158,7 @@ export default function LandingNav() {
               </Link>
             ))}
             <div className="flex flex-col items-center gap-3 pt-2 w-full px-6">
-              <Link
-                href="/login"
-                onClick={() => setOpen(false)}
-                className="w-full text-center border border-line hover:bg-elevated px-4 py-2.5 rounded-full text-[14px] font-medium transition text-sub hover:text-ink"
-              >
-                Log in
-              </Link>
-              <Link
-                href="/signup"
-                onClick={() => setOpen(false)}
-                className="w-full text-center bg-white text-black px-4 py-2.5 rounded-full text-[14px] font-medium hover:bg-[#e8e8e8] transition"
-                style={{ boxShadow: '0 0 22px 5px rgba(255,255,255,0.4)' }}
-              >
-                Get Started
-              </Link>
+              {renderMobileActions()}
             </div>
           </div>
         )}

@@ -1,16 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { authApi } from '@/lib/api/auth';
 import type { AuthUser } from '@/lib/api/types';
+import { clearSessionHint, hasSessionHint } from '@/lib/auth-session-hint';
 
 export const ME_KEY = ['me'] as const;
 
 export function useMe() {
+  const enabled = hasSessionHint();
+
   return useQuery<AuthUser, Error>({
     queryKey: ME_KEY,
-    queryFn:  authApi.me,
-    // Access token starts null on page load; the 401 interceptor will try a
-    // refresh automatically. Only retry once so we don't hammer the server.
-    retry: 1,
+    queryFn: async () => {
+      try {
+        return await authApi.me();
+      } catch (error) {
+        if ((error as { status?: number }).status === 401) {
+          clearSessionHint();
+        }
+        throw error;
+      }
+    },
+    enabled,
+    // authApi.me() already performs one refresh attempt on 401.
+    retry: false,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });

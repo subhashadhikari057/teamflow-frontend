@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Icon from '@/components/primitives/Icon';
 import Logo from '@/components/primitives/Logo';
 import ProfileTab       from './settings/ProfileTab';
@@ -59,6 +59,17 @@ interface Props {
 export default function SettingsOverlay({ onClose, initialTab = 'Profile', onTabChange }: Props) {
   const [tab, setTab] = useState(initialTab);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   function handleTabChange(t: string) {
     setTab(t);
     onTabChange?.(t);
@@ -73,18 +84,19 @@ export default function SettingsOverlay({ onClose, initialTab = 'Profile', onTab
           <span className="text-muted">/</span>
           <span className="text-[14px] font-medium text-ink">Settings</span>
         </div>
-        <button
-          onClick={onClose}
-          className="flex items-center gap-2 h-9 px-3 rounded-md border border-line text-sub hover:text-ink hover:border-[#555555] transition text-[13px]"
-        >
-          <Icon name="x" size={15} /> Close
-        </button>
       </div>
 
       {/* Body */}
       <div className="flex-1 flex min-h-0">
         {/* Sidebar nav */}
         <nav className="w-[220px] border-r border-divider p-3 shrink-0 overflow-y-auto">
+          <button
+            onClick={onClose}
+            className="w-full flex items-center gap-2.5 px-3 h-9 rounded-md text-[14px] text-sub hover:bg-elevated hover:text-ink transition mb-4"
+          >
+            <Icon name="arrowleft" size={16} /> Back to workspace
+          </button>
+
           {NAV_GROUPS.map(group => (
             <div key={group.label} className="mb-5">
               <div className="px-3 mb-1.5 text-[10px] font-semibold tracking-[0.12em] text-muted">{group.label}</div>

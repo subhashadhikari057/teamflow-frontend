@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/lib/api/auth';
 import { ME_KEY } from './useMe';
+import { setSessionHint } from '@/lib/auth-session-hint';
 import type {
   Confirm2FAPayload,
   Disable2FAPayload,
@@ -36,6 +37,7 @@ export function useVerify2FA() {
     onSuccess: (data) => {
       if (!data.requiresTwoFactor) {
         // Backend set cookies — hydrate cache
+        setSessionHint();
         qc.setQueryData(ME_KEY, data.session.user);
       }
     },
