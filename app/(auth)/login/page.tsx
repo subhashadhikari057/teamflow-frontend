@@ -17,9 +17,11 @@ import { authApi } from '@/lib/api/auth';
 
 function TwoFactorStep({
   challengeToken,
+  redirectTo,
   onBack,
 }: {
   challengeToken: string;
+  redirectTo: string;
   onBack: () => void;
 }) {
   const router   = useRouter();
@@ -69,8 +71,11 @@ function TwoFactorStep({
         if (code.length !== 6) { toast.warning('Enter all 6 digits.'); return; }
         await verify.mutateAsync({ challengeToken, code });
       }
-      toast.success('Logged in', 'Welcome back!');
-      router.push('/nomor');
+      const hasPendingOauthWelcome = Boolean(localStorage.getItem('oauth_welcome'));
+      if (!hasPendingOauthWelcome) {
+        toast.success('Logged in', 'Welcome back!');
+      }
+      router.push(redirectTo);
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
       setDigits(['', '', '', '', '', '']);
@@ -248,20 +253,33 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
 
 export default function LoginPage() {
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [redirectTo, setRedirectTo] = useState('/nomor');
   const toast = useToast();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const challengeTokenFromUrl = params.get('challengeToken');
+    const redirectToFromUrl = params.get('redirectTo');
+
+    if (challengeTokenFromUrl) {
+      setChallengeToken(challengeTokenFromUrl);
+    }
+
+    if (redirectToFromUrl) {
+      setRedirectTo(redirectToFromUrl);
+    }
+
     if (params.get('error') === 'oauth_failed') {
       toast.error('Google sign-in failed. Please try again.');
     }
-  }, []);
+  }, [toast]);
 
   return (
     <AuthShell>
       {challengeToken ? (
         <TwoFactorStep
           challengeToken={challengeToken}
+          redirectTo={redirectTo}
           onBack={() => setChallengeToken(null)}
         />
       ) : (

@@ -2,7 +2,16 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Routes anyone can access without a token
-const PUBLIC_ROUTES = ['/', '/login', '/signup', '/onboarding', '/blog', '/changelog'];
+const PUBLIC_ROUTES = [
+  '/',
+  '/login',
+  '/signup',
+  '/onboarding',
+  '/forgot-password',
+  '/reset-password',
+  '/blog',
+  '/changelog',
+];
 
 function isPublic(pathname: string) {
   return PUBLIC_ROUTES.some((p) => pathname === p || pathname.startsWith(p + '/'));

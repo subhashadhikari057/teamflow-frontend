@@ -51,12 +51,23 @@ export default function WorkspacePage() {
     if (d) setDensityRaw(d);
     if (f) setFontSizeRaw(f);
 
+    const params = new URLSearchParams(window.location.search);
+    const oauthProvider = params.get('oauth');
     const oauthWelcome = localStorage.getItem('oauth_welcome');
-    if (oauthWelcome) {
+
+    if (oauthProvider === 'google_success' || oauthProvider === 'github_success' || oauthWelcome) {
       localStorage.removeItem('oauth_welcome');
-      flashToast('Signed in with Google', { type: 'success', description: 'Welcome to Teamflow!' });
+      const providerName = oauthProvider === 'github_success' ? 'GitHub' : 'Google';
+      flashToast(`Signed in with ${providerName}`, {
+        type: 'success',
+        description: 'Welcome to Teamflow!',
+      });
+
+      if (oauthProvider) {
+        router.replace('/nomor');
+      }
     }
-  }, []);
+  }, [flashToast, router]);
 
 
   const setDensity  = (d: Density)  => { setDensityRaw(d);  localStorage.setItem('tf-density',  d); };
