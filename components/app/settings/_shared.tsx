@@ -85,3 +85,88 @@ export function RoleBadge({ role }: { role: string }) {
     </span>
   );
 }
+
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  warning,
+  confirmLabel,
+  cancelLabel = 'Cancel',
+  tone = 'danger',
+  icon = 'warning',
+  isPending = false,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  warning?: string;
+  confirmLabel: string;
+  cancelLabel?: string;
+  tone?: 'primary' | 'danger';
+  icon?: React.ComponentProps<typeof Icon>['name'];
+  isPending?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-sm bg-panel border border-line rounded-2xl p-6 shadow-2xl space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${
+              tone === 'danger'
+                ? 'bg-danger/10 border border-danger/20'
+                : 'bg-elevated border border-line'
+            }`}>
+              <Icon name={icon} size={18} className={tone === 'danger' ? 'text-danger' : 'text-sub'} />
+            </div>
+            <h3 className="text-[16px] font-semibold text-ink">{title}</h3>
+            <p className="text-[13px] text-sub mt-1 leading-relaxed">{description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isPending}
+            className="text-muted hover:text-ink transition shrink-0 disabled:opacity-40"
+            aria-label="Close dialog"
+          >
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+        {warning && (
+          <div className="flex items-start gap-3 rounded-xl border border-[#eab308]/20 bg-[#eab308]/5 px-4 py-3">
+            <Icon name="warning" size={16} className="text-[#eab308] shrink-0 mt-0.5" />
+            <p className="text-[13px] text-ink leading-relaxed">{warning}</p>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className={`flex-1 h-9 px-4 text-sm font-medium rounded-md transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
+              tone === 'danger'
+                ? 'bg-danger text-white hover:bg-[#dc2626]'
+                : 'bg-white text-black hover:bg-[#e0e0e0]'
+            }`}
+          >
+            {isPending ? 'Please wait…' : confirmLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isPending}
+            className="h-9 px-4 text-sm font-medium rounded-md border border-line text-ink hover:border-[#555555] transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+          >
+            {cancelLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

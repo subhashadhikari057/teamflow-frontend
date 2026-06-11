@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
-import { FieldInput } from './_shared';
+import { ConfirmDialog, FieldInput } from './_shared';
 import {
   useChangePassword,
   useCurrentUser,
@@ -12,10 +12,15 @@ import {
   useConfirm2FA,
   useDisable2FA,
   useRegenerateBackupCodes,
+  useSessions,
+  useRevokeSession,
+  useRevokeAllSessions,
+  useLogout,
 } from '@/hooks/auth';
 import { useToast } from '@/lib/toast-context';
 import { getAuthErrorMessage } from '@/lib/api/errors';
 import { authApi } from '@/lib/api/auth';
+import type { SessionItem } from '@/lib/api/types';
 
 // ─── Change password ──────────────────────────────────────────────────────────
 
@@ -81,6 +86,242 @@ function ChangePasswordSection() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+
+function formatSessionDate(value?: string) {
+  if (!value) return 'Unknown';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown';
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function getSessionTitle(session: SessionItem) {
+  return session.deviceName || session.deviceType || 'Unknown device';
+}
+
+function getSessionMeta(session: SessionItem) {
+  const parts = [
+    session.userAgent,
+    session.location,
+    session.ipAddress,
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(' · ') : 'Location unavailable';
+}
+
+function SessionRow({
+  session,
+  onRevoke,
+  isRevoking,
+}: {
+  session: SessionItem;
+  onRevoke?: () => void;
+  isRevoking?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-line bg-elevated/40 p-4 flex items-start justify-between gap-4">
+      <div className="min-w-0 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-xl bg-panel border border-line flex items-center justify-center shrink-0">
+          <Icon name="hardware" size={16} className="text-sub" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[14px] font-medium text-ink">{getSessionTitle(session)}</p>
+            {session.isCurrent && (
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded-full border border-white/15 bg-white/8 text-ink">
+                Current
+              </span>
+            )}
+          </div>
+          <p className="text-[12px] text-sub mt-1">{getSessionMeta(session)}</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[12px] text-muted">
+            <span>Last active: {formatSessionDate(session.lastActiveAt)}</span>
+            <span>Started: {formatSessionDate(session.createdAt)}</span>
+            <span>Expires: {formatSessionDate(session.expiresAt)}</span>
+          </div>
+        </div>
+      </div>
+
+      {!session.isCurrent && onRevoke && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onRevoke}
+          disabled={isRevoking}
+          className="shrink-0 self-center whitespace-nowrap min-w-[124px]"
+        >
+          {isRevoking ? 'Ending…' : 'End session'}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function SessionsSection() {
+  const toast = useToast();
+  const router = useRouter();
+  const sessions = useSessions();
+  const revokeSession = useRevokeSession();
+  const revokeAllSessions = useRevokeAllSessions();
+  const logout = useLogout();
+  const [confirmAction, setConfirmAction] = useState<'current' | 'others' | null>(null);
+
+  const items = sessions.data?.items ?? [];
+  const currentSession = items.find((session) => session.isCurrent) ?? null;
+  const otherSessions = items.filter((session) => !session.isCurrent);
+
+  async function handleRevokeSession(sessionId: string) {
+    try {
+      await revokeSession.mutateAsync(sessionId);
+      toast.success('Session ended.');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+    }
+  }
+
+  async function handleRevokeAll() {
+    try {
+      await revokeAllSessions.mutateAsync();
+      toast.success('Other sessions signed out.');
+      setConfirmAction(null);
+      await sessions.refetch();
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+    }
+  }
+
+  async function handleSignOutCurrent() {
+    try {
+      await logout.mutateAsync();
+      toast.success('Signed out of this device.');
+      setConfirmAction(null);
+      router.push('/login');
+    } catch (err) {
+      toast.error(getAuthErrorMessage(err));
+    }
+  }
+
+  return (
+    <div className="py-6 border-b border-divider">
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <div className="w-8 h-8 rounded-lg bg-elevated border border-line flex items-center justify-center shrink-0">
+          <Icon name="hardware" size={14} className="text-sub" />
+        </div>
+        <span className="text-[14px] font-medium text-ink">Sessions</span>
+      </div>
+      <p className="text-[13px] text-sub mb-5 ml-10">
+        Review where your account is signed in and end sessions you no longer trust.
+      </p>
+
+      <div className="ml-10 space-y-4">
+        <div className="rounded-xl border border-line overflow-hidden">
+          <div className="px-5 py-4 flex items-center justify-between gap-4 border-b border-divider">
+            <div>
+              <p className="text-[14px] font-medium text-ink">Active devices</p>
+              <p className="text-[12px] text-sub mt-0.5">
+                {sessions.isLoading ? 'Checking your active sessions…' : `${items.length} active session${items.length === 1 ? '' : 's'} found`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => sessions.refetch()}
+                disabled={sessions.isFetching}
+              >
+                <Icon name="refresh" size={13} /> {sessions.isFetching ? 'Refreshing…' : 'Refresh'}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirmAction('others')}
+                disabled={revokeAllSessions.isPending || otherSessions.length === 0}
+              >
+                {revokeAllSessions.isPending ? 'Ending…' : 'Sign out other sessions'}
+              </Button>
+            </div>
+          </div>
+
+          <div className="p-5 space-y-4">
+            {sessions.isLoading && (
+              <div className="rounded-xl border border-line bg-elevated/30 px-4 py-5 text-[13px] text-sub">
+                Loading session details…
+              </div>
+            )}
+
+            {sessions.isError && (
+              <div className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-5 text-[13px] text-sub">
+                We couldn&apos;t load your active sessions right now.
+              </div>
+            )}
+
+            {!sessions.isLoading && !sessions.isError && currentSession && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[12px] font-semibold tracking-[0.12em] text-muted">THIS DEVICE</p>
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmAction('current')}>
+                    <Icon name="logout" size={13} /> Sign out
+                  </Button>
+                </div>
+                <SessionRow session={currentSession} />
+              </div>
+            )}
+
+            {!sessions.isLoading && !sessions.isError && (
+              <div className="space-y-2">
+                <p className="text-[12px] font-semibold tracking-[0.12em] text-muted">OTHER SESSIONS</p>
+
+                {otherSessions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-line px-4 py-5 text-[13px] text-sub">
+                    No other active sessions right now.
+                  </div>
+                ) : (
+                  otherSessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      onRevoke={() => handleRevokeSession(session.id)}
+                      isRevoking={revokeSession.isPending && revokeSession.variables === session.id}
+                    />
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <ConfirmDialog
+        open={confirmAction === 'others'}
+        title="Sign out other sessions?"
+        description="This will end every active session except the one you are using right now."
+        confirmLabel="Sign out other sessions"
+        icon="hardware"
+        isPending={revokeAllSessions.isPending}
+        onConfirm={handleRevokeAll}
+        onClose={() => setConfirmAction(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmAction === 'current'}
+        title="Sign out of this device?"
+        description="You will be logged out immediately and need to sign in again to continue."
+        warning="If you are on a shared or temporary device, make sure you know your login details before continuing."
+        confirmLabel="Sign out"
+        icon="logout"
+        isPending={logout.isPending}
+        onConfirm={handleSignOutCurrent}
+        onClose={() => setConfirmAction(null)}
+      />
     </div>
   );
 }
@@ -183,7 +424,7 @@ function TwoFactorSetupFlow({ onDone }: { onDone: (codes: string[]) => void }) {
         <div>
           <p className="text-[14px] font-medium text-ink">Not enabled</p>
           <p className="text-[13px] text-sub mt-1 max-w-xs">
-            Protect your account with an authenticator app. You'll need a code each time you log in.
+            Protect your account with an authenticator app. You&apos;ll need a code each time you log in.
           </p>
         </div>
         <Button onClick={startSetup} disabled={enable.isPending}>
@@ -236,7 +477,7 @@ function TwoFactorSetupFlow({ onDone }: { onDone: (codes: string[]) => void }) {
                   className="flex items-center gap-1.5 text-[12px] text-muted hover:text-sub transition"
                 >
                   <Icon name={showManual ? 'chevup' : 'chevdown'} size={12} />
-                  Can't scan? Enter key manually
+                  Can&apos;t scan? Enter key manually
                 </button>
                 {showManual && (
                   <div className="mt-2 flex items-center gap-2">
@@ -498,7 +739,7 @@ function TwoFactorSection() {
               </p>
             </div>
             <BackupCodeGrid codes={backupCodes} isNew />
-            <Button variant="secondary" size="sm" onClick={dismissCodes}>Done, I've saved my codes</Button>
+            <Button variant="secondary" size="sm" onClick={dismissCodes}>Done, I&apos;ve saved my codes</Button>
           </div>
         )}
 
@@ -520,7 +761,7 @@ function TwoFactorSection() {
               </p>
             </div>
             <BackupCodeGrid codes={backupCodes} isNew />
-            <Button variant="secondary" size="sm" onClick={dismissCodes}>Done, I've saved my codes</Button>
+            <Button variant="secondary" size="sm" onClick={dismissCodes}>Done, I&apos;ve saved my codes</Button>
           </div>
         )}
       </div>
@@ -554,6 +795,7 @@ export default function SecurityTab() {
 
       <ChangePasswordSection />
       <TwoFactorSection />
+      <SessionsSection />
     </div>
   );
 }

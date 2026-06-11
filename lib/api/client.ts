@@ -2,6 +2,11 @@ import { clearSessionHint } from '@/lib/auth-session-hint';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5001/api';
 
+export interface ApiRequestInit extends RequestInit {
+  skipAuthRefresh?: boolean;
+  skipAuthRedirect?: boolean;
+}
+
 // ─── Error type ────────────────────────────────────────────────────────────
 
 export interface ApiError extends Error {
@@ -22,13 +27,14 @@ export function getErrorCode(error: unknown): string {
 
 // ─── Core fetch wrapper ────────────────────────────────────────────────────
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
+  const { skipAuthRefresh, skipAuthRedirect, ...requestInit } = init;
   const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
+    ...requestInit,
     credentials: 'include',          // send HttpOnly cookies automatically
     headers: {
       'Content-Type': 'application/json',
-      ...init.headers,
+      ...requestInit.headers,
     },
   });
 
@@ -72,11 +78,12 @@ async function doRefresh(): Promise<boolean> {
   }
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function api<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
   try {
     return await request<T>(path, init);
   } catch (error) {
     if ((error as ApiError).status !== 401) throw error;
+    if (init.skipAuthRefresh) throw error;
 
     // Try refresh once
     if (!refreshPromise) {
@@ -94,14 +101,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 // ─── Convenience helpers ───────────────────────────────────────────────────
 
-export const get  = <T>(path: string, init?: RequestInit) =>
+export const get  = <T>(path: string, init?: ApiRequestInit) =>
   api<T>(path, { ...init, method: 'GET' });
 
-export const post  = <T>(path: string, body?: unknown, init?: RequestInit) =>
+export const post  = <T>(path: string, body?: unknown, init?: ApiRequestInit) =>
   api<T>(path, { ...init, method: 'POST',  body: body !== undefined ? JSON.stringify(body) : undefined });
 
-export const patch = <T>(path: string, body?: unknown, init?: RequestInit) =>
+export const patch = <T>(path: string, body?: unknown, init?: ApiRequestInit) =>
   api<T>(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined });
 
-export const del   = <T>(path: string, init?: RequestInit) =>
+export const del   = <T>(path: string, init?: ApiRequestInit) =>
   api<T>(path, { ...init, method: 'DELETE' });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Logo from '@/components/primitives/Logo';
 import { useMe } from '@/hooks/auth/useMe';
@@ -14,8 +14,13 @@ const NAV_LINKS = [
 
 export default function LandingNav() {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const { data: user, isLoading: isAuthLoading } = useMe();
   const isLoggedIn = Boolean(user);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function renderDesktopActions() {
     if (isLoggedIn) {
@@ -30,7 +35,7 @@ export default function LandingNav() {
       );
     }
 
-    if (isAuthLoading) {
+    if (mounted && isAuthLoading) {
       return (
         <div className="h-[38px] w-[232px] rounded-full border border-line bg-elevated/40" aria-hidden="true" />
       );
@@ -69,7 +74,7 @@ export default function LandingNav() {
       );
     }
 
-    if (isAuthLoading) {
+    if (mounted && isAuthLoading) {
       return <div className="h-[42px] w-full rounded-full border border-line bg-elevated/40" aria-hidden="true" />;
     }
 
