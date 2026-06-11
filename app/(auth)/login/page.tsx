@@ -260,6 +260,7 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const challengeTokenFromUrl = params.get('challengeToken');
     const redirectToFromUrl = params.get('redirectTo');
+    const pendingVerificationEmail = localStorage.getItem('pending_verification_email');
 
     if (challengeTokenFromUrl) {
       setChallengeToken(challengeTokenFromUrl);
@@ -267,6 +268,14 @@ export default function LoginPage() {
 
     if (redirectToFromUrl) {
       setRedirectTo(redirectToFromUrl);
+    }
+
+    if (pendingVerificationEmail) {
+      localStorage.removeItem('pending_verification_email');
+      toast.success(
+        'Check your email',
+        `We sent a verification link to ${pendingVerificationEmail}.`,
+      );
     }
 
     if (params.get('error') === 'oauth_failed') {

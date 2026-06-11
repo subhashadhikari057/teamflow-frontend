@@ -42,7 +42,7 @@ export default function SignUpPage() {
     }
     try {
       await register.mutateAsync({ name, username, email, password });
-      toast.success('Account created!', 'Check your email to verify your account.');
+      localStorage.setItem('pending_verification_email', email.trim().toLowerCase());
       router.push('/login');
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
