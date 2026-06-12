@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { Suspense, useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AuthShell from '@/components/auth/AuthShell';
 import Field from '@/components/auth/Field';
 import GoogleButton from '@/components/auth/GoogleButton';
@@ -12,20 +12,44 @@ import { useToast } from '@/lib/toast-context';
 import { useLogin, useVerify2FA } from '@/hooks/auth';
 import { getAuthErrorMessage } from '@/lib/api/errors';
 import { authApi } from '@/lib/api/auth';
+import { workspacesApi } from '@/lib/api/workspaces';
 import { getWorkspacePath } from '@/lib/workspace-routing';
-import { setOauthIntent } from '@/lib/auth-session-hint';
+import {
+  clearPostAuthRedirect,
+  getPostAuthRedirect,
+  setOauthIntent,
+  setPostAuthRedirect,
+} from '@/lib/auth-session-hint';
 
 async function resolvePostAuthPath(fallbackPath: string): Promise<string> {
-  if (fallbackPath !== '/workspace') {
-    return fallbackPath;
+  const pendingRedirect = getPostAuthRedirect();
+  const targetPath = fallbackPath !== '/workspace'
+    ? fallbackPath
+    : pendingRedirect ?? fallbackPath;
+
+  if (targetPath !== '/workspace') {
+    clearPostAuthRedirect();
+    return targetPath;
   }
 
   const user = await authApi.me();
 
   if (user.currentWorkspace?.slug) {
+    clearPostAuthRedirect();
     return getWorkspacePath(user.currentWorkspace.slug);
   }
 
+  const workspaces = await workspacesApi.list();
+
+  if (workspaces.length > 0) {
+    await authApi.setCurrentWorkspace({
+      workspaceId: workspaces[0].id,
+    });
+    clearPostAuthRedirect();
+    return getWorkspacePath(workspaces[0].slug);
+  }
+
+  clearPostAuthRedirect();
   return '/onboarding';
 }
 
@@ -174,7 +198,15 @@ function TwoFactorStep({
 
 // ─── Login step ───────────────────────────────────────────────────────────────
 
-function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }) {
+function LoginStep({
+  onRequires2FA,
+  redirectTo,
+  isInviteRedirect,
+}: {
+  onRequires2FA: (token: string) => void;
+  redirectTo: string;
+  isInviteRedirect: boolean;
+}) {
   const toast    = useToast();
   const login    = useLogin();
   const router   = useRouter();
@@ -183,11 +215,17 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
   const [password,       setPassword]       = useState('');
   const [showPassword,   setShowPassword]   = useState(false);
   const [googleLoading,  setGoogleLoading]  = useState(false);
+  const authRedirectTarget = redirectTo !== '/workspace'
+    ? redirectTo
+    : getPostAuthRedirect() ?? redirectTo;
 
   async function handleGoogleLogin() {
     setGoogleLoading(true);
     try {
-      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/workspace', clientState: 'login' });
+      if (authRedirectTarget !== '/workspace') {
+        setPostAuthRedirect(authRedirectTarget);
+      }
+      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: authRedirectTarget, clientState: 'login' });
       localStorage.setItem('oauth_welcome', 'google');
       setOauthIntent('login');
       window.location.href = url;
@@ -200,13 +238,16 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
   async function handleLogin() {
     if (!identifier || !password) { toast.warning('Please fill in all fields.'); return; }
     try {
+      if (authRedirectTarget !== '/workspace') {
+        setPostAuthRedirect(authRedirectTarget);
+      }
       const result = await login.mutateAsync({ identifier, password });
       if (result.requiresTwoFactor) {
         onRequires2FA(result.challengeToken);
         return;
       }
       toast.success('Logged in', 'Welcome back!');
-      router.push(await resolvePostAuthPath('/workspace'));
+      router.push(await resolvePostAuthPath(authRedirectTarget));
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
     }
@@ -216,6 +257,12 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
     <div className="rounded-2xl border border-line bg-panel p-7">
       <h1 className="text-[22px] font-semibold tracking-tightest text-ink text-center">Welcome back</h1>
       <p className="text-[13.5px] text-sub text-center mt-1.5 mb-6">Log in to your workspace.</p>
+
+      {isInviteRedirect && (
+        <div className="rounded-xl border border-line bg-elevated px-4 py-3 text-[13px] text-sub leading-relaxed mb-5">
+          Use the same email address that received this invite.
+        </div>
+      )}
 
       <GoogleButton onClick={handleGoogleLogin} loading={googleLoading}>Continue with Google</GoogleButton>
 
@@ -268,24 +315,17 @@ function LoginStep({ onRequires2FA }: { onRequires2FA: (token: string) => void }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function LoginPage() {
-  const [challengeToken, setChallengeToken] = useState<string | null>(null);
-  const [redirectTo, setRedirectTo] = useState('/workspace');
+function LoginPageContent() {
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirectTo') ?? '/workspace';
+  const effectiveRedirectTo = redirectTo !== '/workspace'
+    ? redirectTo
+    : getPostAuthRedirect() ?? redirectTo;
+  const [challengeToken, setChallengeToken] = useState<string | null>(searchParams.get('challengeToken'));
   const toast = useToast();
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const challengeTokenFromUrl = params.get('challengeToken');
-    const redirectToFromUrl = params.get('redirectTo');
     const pendingVerificationEmail = localStorage.getItem('pending_verification_email');
-
-    if (challengeTokenFromUrl) {
-      setChallengeToken(challengeTokenFromUrl);
-    }
-
-    if (redirectToFromUrl) {
-      setRedirectTo(redirectToFromUrl);
-    }
 
     if (pendingVerificationEmail) {
       localStorage.removeItem('pending_verification_email');
@@ -295,29 +335,54 @@ export default function LoginPage() {
       );
     }
 
-    if (params.get('error') === 'oauth_failed') {
+    if (searchParams.get('error') === 'oauth_failed') {
       toast.error('Google sign-in failed. Please try again.');
     }
-  }, [toast]);
+  }, [searchParams, toast]);
+
+  const isInviteRedirect = effectiveRedirectTo.startsWith('/invite?');
+  const signUpHref = effectiveRedirectTo === '/workspace'
+    ? '/signup'
+    : `/signup?redirectTo=${encodeURIComponent(effectiveRedirectTo)}`;
 
   return (
     <AuthShell>
       {challengeToken ? (
         <TwoFactorStep
           challengeToken={challengeToken}
-          redirectTo={redirectTo}
+          redirectTo={effectiveRedirectTo}
           onBack={() => setChallengeToken(null)}
         />
       ) : (
-        <LoginStep onRequires2FA={setChallengeToken} />
+        <LoginStep
+          onRequires2FA={setChallengeToken}
+          redirectTo={effectiveRedirectTo}
+          isInviteRedirect={isInviteRedirect}
+        />
       )}
 
       {!challengeToken && (
         <p className="text-center text-[13px] text-sub mt-5">
           New to Teamflow?{' '}
-          <Link href="/signup" className="text-ink hover:underline">Create an account</Link>
+          <Link href={signUpHref} className="text-ink hover:underline">Create an account</Link>
         </p>
       )}
     </AuthShell>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={(
+        <AuthShell>
+          <div className="rounded-2xl border border-line bg-panel p-7 text-center text-[14px] text-sub">
+            Loading…
+          </div>
+        </AuthShell>
+      )}
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

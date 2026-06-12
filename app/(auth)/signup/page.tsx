@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AuthShell from '@/components/auth/AuthShell';
 import Field from '@/components/auth/Field';
 import GoogleButton from '@/components/auth/GoogleButton';
@@ -11,12 +11,14 @@ import { authApi } from '@/lib/api/auth';
 import { useRegister } from '@/hooks/auth';
 import { useToast } from '@/lib/toast-context';
 import { getAuthErrorMessage } from '@/lib/api/errors';
-import { setOauthIntent } from '@/lib/auth-session-hint';
+import { getPostAuthRedirect, setOauthIntent, setPostAuthRedirect } from '@/lib/auth-session-hint';
 
-export default function SignUpPage() {
+function SignUpPageContent() {
   const router  = useRouter();
+  const searchParams = useSearchParams();
   const toast   = useToast();
   const register = useRegister();
+  const redirectTo = searchParams.get('redirectTo') ?? getPostAuthRedirect() ?? '/workspace';
 
   const [name,     setName]     = useState('');
   const [username, setUsername] = useState('');
@@ -24,10 +26,18 @@ export default function SignUpPage() {
   const [password, setPassword] = useState('');
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  const isInviteRedirect = redirectTo.startsWith('/invite?');
+  const loginHref = redirectTo === '/workspace'
+    ? '/login'
+    : `/login?redirectTo=${encodeURIComponent(redirectTo)}`;
+
   async function handleGoogleSignup() {
     setGoogleLoading(true);
     try {
-      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: '/workspace', clientState: 'signup' });
+      if (redirectTo !== '/workspace') {
+        setPostAuthRedirect(redirectTo);
+      }
+      const { url } = await authApi.getGoogleAuthUrl({ redirectUri: redirectTo, clientState: 'signup' });
       localStorage.setItem('oauth_welcome', 'google');
       setOauthIntent('signup');
       window.location.href = url;
@@ -45,7 +55,10 @@ export default function SignUpPage() {
     try {
       await register.mutateAsync({ name, username, email, password });
       localStorage.setItem('pending_verification_email', email.trim().toLowerCase());
-      router.push('/login');
+      if (redirectTo !== '/workspace') {
+        setPostAuthRedirect(redirectTo);
+      }
+      router.push(loginHref);
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
     }
@@ -56,6 +69,12 @@ export default function SignUpPage() {
       <div className="rounded-lg border border-line bg-panel p-7">
         <h1 className="text-[22px] font-semibold tracking-tightest text-ink text-center">Create your account</h1>
         <p className="text-[13.5px] text-sub text-center mt-1.5 mb-6">Start collaborating in under a minute.</p>
+
+        {isInviteRedirect && (
+          <div className="rounded-xl border border-line bg-elevated px-4 py-3 text-[13px] text-sub leading-relaxed mb-5">
+            Use the same email address that received this invite.
+          </div>
+        )}
 
         <GoogleButton onClick={handleGoogleSignup} loading={googleLoading}>
           Continue with Google
@@ -113,10 +132,26 @@ export default function SignUpPage() {
 
       <p className="text-center text-[13px] text-sub mt-5">
         Already have an account?{' '}
-        <Link href="/login" className="text-ink hover:underline">
+        <Link href={loginHref} className="text-ink hover:underline">
           Log in
         </Link>
       </p>
     </AuthShell>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense
+      fallback={(
+        <AuthShell>
+          <div className="rounded-2xl border border-line bg-panel p-7 text-center text-[14px] text-sub">
+            Loading…
+          </div>
+        </AuthShell>
+      )}
+    >
+      <SignUpPageContent />
+    </Suspense>
   );
 }

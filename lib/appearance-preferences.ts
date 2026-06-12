@@ -54,11 +54,11 @@ function readFontSizeSnapshot(): FontSize {
     : 'default';
 }
 
-export function useDensityPreference() {
+export function useDensityPreference(): Density {
   return useSyncExternalStore(subscribe, readDensitySnapshot, () => 'comfortable');
 }
 
-export function useFontSizePreference() {
+export function useFontSizePreference(): FontSize {
   return useSyncExternalStore(subscribe, readFontSizeSnapshot, () => 'default');
 }
 

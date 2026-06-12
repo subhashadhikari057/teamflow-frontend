@@ -189,7 +189,7 @@ export default function Sidebar({
       // ignore — still clear local state and redirect
     }
     toast.success('Logged out');
-    router.push('/login');
+    window.location.replace('/login');
   }
 
   function handleWorkspaceSelect(workspace: WorkspaceSummary) {

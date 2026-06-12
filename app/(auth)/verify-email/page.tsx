@@ -7,6 +7,7 @@ import AuthShell from '@/components/auth/AuthShell';
 import Button from '@/components/primitives/Button';
 import { useVerifyEmail } from '@/hooks/auth/useVerifyEmail';
 import { getAuthErrorMessage } from '@/lib/api/errors';
+import { getPostAuthRedirect } from '@/lib/auth-session-hint';
 import { useToast } from '@/lib/toast-context';
 
 type VerificationState = 'verifying' | 'success' | 'error' | 'missing-token';
@@ -18,6 +19,11 @@ function VerifyEmailContent() {
   const verifyEmail = useVerifyEmail();
   const hasAttemptedRef = useRef(false);
   const token = useMemo(() => searchParams.get('token')?.trim() ?? '', [searchParams]);
+  const postAuthRedirect = getPostAuthRedirect();
+  const loginHref = postAuthRedirect
+    ? `/login?redirectTo=${encodeURIComponent(postAuthRedirect)}`
+    : '/login';
+  const isInviteRedirect = postAuthRedirect?.startsWith('/invite?') ?? false;
   const [state, setState] = useState<VerificationState>(
     token ? 'verifying' : 'missing-token',
   );
@@ -47,7 +53,7 @@ function VerifyEmailContent() {
   }, [toast, token, verifyEmail]);
 
   function goToLogin() {
-    router.push('/login');
+    router.push(loginHref);
   }
 
   return (
@@ -59,6 +65,12 @@ function VerifyEmailContent() {
         <p className="text-[13.5px] text-sub text-center mt-1.5 mb-6">
           {message}
         </p>
+
+        {state === 'success' && isInviteRedirect && (
+          <div className="rounded-xl border border-line bg-elevated px-4 py-3 text-[13px] text-sub leading-relaxed mb-6">
+            Log in with the same email address that received this invite.
+          </div>
+        )}
 
         <div className="space-y-4">
           {state === 'verifying' ? (
@@ -74,7 +86,7 @@ function VerifyEmailContent() {
           ) : null}
 
           {state === 'error' || state === 'missing-token' ? (
-            <Button size="lg" className="w-full" onClick={() => router.push('/login')}>
+            <Button size="lg" className="w-full" onClick={() => router.push(loginHref)}>
               Back to login
             </Button>
           ) : null}
@@ -83,7 +95,7 @@ function VerifyEmailContent() {
 
       <p className="text-center text-[13px] text-sub mt-5">
         Back to{' '}
-        <Link href="/login" className="text-ink hover:underline">
+        <Link href={loginHref} className="text-ink hover:underline">
           login
         </Link>
       </p>

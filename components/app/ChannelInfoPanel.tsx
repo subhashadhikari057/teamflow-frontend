@@ -342,8 +342,9 @@ export default function ChannelInfoPanel({ active, workspaceId, channels, onClos
   });
   const channel = (channelDetailQuery.data ?? apiChannel) as ChannelDetail | ChannelSummary | null;
   const channelName = channel?.name ?? fallbackChannel?.name ?? active.id;
-  const channelMembers = 'members' in (channel ?? {}) && Array.isArray(channel?.members)
-    ? channel.members
+  const channelDetail = channel as ChannelDetail | null;
+  const channelMembers = Array.isArray(channelDetail?.members)
+    ? channelDetail.members
     : EMPTY_CHANNEL_MEMBERS;
   const creatorMember = useMemo(
     () => channelMembers.find((member) => member.userId === channel?.createdBy),

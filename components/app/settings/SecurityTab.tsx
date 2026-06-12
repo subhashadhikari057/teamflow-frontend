@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import { ConfirmDialog, FieldInput } from './_shared';
@@ -20,12 +19,12 @@ import {
 import { useToast } from '@/lib/toast-context';
 import { getAuthErrorMessage } from '@/lib/api/errors';
 import { authApi } from '@/lib/api/auth';
+import { clearAuthFlowState, clearSessionHint } from '@/lib/auth-session-hint';
 import type { SessionItem } from '@/lib/api/types';
 
 // ─── Change password ──────────────────────────────────────────────────────────
 
 function ChangePasswordSection() {
-  const router         = useRouter();
   const toast          = useToast();
   const changePassword = useChangePassword();
 
@@ -45,8 +44,10 @@ function ChangePasswordSection() {
     try {
       await changePassword.mutateAsync({ currentPassword: currentPw, newPassword: newPw });
       await authApi.logout().catch(() => {});
+      clearSessionHint();
+      clearAuthFlowState();
       toast.success('Password changed. Please log in again.');
-      router.push('/login');
+      window.location.replace('/login');
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
     }
@@ -168,7 +169,6 @@ function SessionRow({
 
 function SessionsSection() {
   const toast = useToast();
-  const router = useRouter();
   const sessions = useSessions();
   const revokeSession = useRevokeSession();
   const revokeAllSessions = useRevokeAllSessions();
@@ -204,7 +204,7 @@ function SessionsSection() {
       await logout.mutateAsync();
       toast.success('Signed out of this device.');
       setConfirmAction(null);
-      router.push('/login');
+      window.location.replace('/login');
     } catch (err) {
       toast.error(getAuthErrorMessage(err));
     }

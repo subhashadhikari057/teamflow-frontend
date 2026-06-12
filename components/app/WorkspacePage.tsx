@@ -85,8 +85,19 @@ export default function WorkspacePage({
   });
   const setCurrentWorkspace = useMutation({
     mutationFn: authApi.setCurrentWorkspace,
-    onSuccess: (user) => {
+    onSuccess: (user, variables) => {
       queryClient.setQueryData(ME_KEY, user);
+
+      const selectedWorkspace = workspacesQuery.data?.find(
+        (workspace) => workspace.id === variables.workspaceId,
+      );
+      const nextWorkspacePath = getWorkspacePath(
+        user.currentWorkspace?.slug ?? selectedWorkspace?.slug,
+      );
+
+      if (routeWorkspaceSlug !== nextWorkspacePath.slice(1)) {
+        router.replace(nextWorkspacePath);
+      }
     },
   });
   const [active, setActive] = useState<ActiveView>({ type: 'channel', id: 'engineering' });
