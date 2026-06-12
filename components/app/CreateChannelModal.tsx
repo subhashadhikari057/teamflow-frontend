@@ -118,7 +118,7 @@ export default function CreateChannelModal({
             type="button"
             onClick={onClose}
             disabled={createChannel.isPending}
-            className="w-8 h-8 rounded-md text-muted hover:text-ink hover:bg-elevated transition disabled:opacity-40"
+            className="w-9 h-9 -mr-1 -mt-1 rounded-lg shrink-0 flex items-center justify-center text-muted hover:text-ink hover:bg-elevated transition disabled:opacity-40"
             aria-label="Close create channel modal"
           >
             <Icon name="x" size={16} />
