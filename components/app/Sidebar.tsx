@@ -50,6 +50,7 @@ interface SidebarProps {
   channels: ChannelSummary[];
   channelsLoading: boolean;
   onSelect: (a: ActiveView) => void;
+  openAddChannel: () => void;
   openSearch: () => void;
   openSettings: () => void;
   openShortcuts: () => void;
@@ -111,7 +112,7 @@ function WorkspaceAvatar({
 }
 
 export default function Sidebar({
-  collapsed, active, channels, channelsLoading, onSelect, openSearch, openSettings, openShortcuts, openProfile, openCompose,
+  collapsed, active, channels, channelsLoading, onSelect, openAddChannel, openSearch, openSettings, openShortcuts, openProfile, openCompose,
 }: SidebarProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -369,7 +370,11 @@ export default function Sidebar({
               </button>
             )}
             {!collapsed && (
-              <button className="w-5 h-5 rounded text-muted hover:text-ink hover:bg-elevated flex items-center justify-center transition">
+              <button
+                onClick={openAddChannel}
+                className="w-5 h-5 rounded text-muted hover:text-ink hover:bg-elevated flex items-center justify-center transition"
+                aria-label="Create channel"
+              >
                 <Icon name="plus" size={13} />
               </button>
             )}

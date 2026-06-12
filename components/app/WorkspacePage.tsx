@@ -11,6 +11,7 @@ import ShortcutsOverlay from '@/components/app/ShortcutsOverlay';
 import ProfilePopover from '@/components/app/ProfilePopover';
 import CallOverlay from '@/components/app/CallOverlay';
 import ChannelInfoPanel from '@/components/app/ChannelInfoPanel';
+import CreateChannelModal from '@/components/app/CreateChannelModal';
 import { useToast } from '@/lib/toast-context';
 import { AppearanceContext } from '@/lib/appearance-context';
 import type { Density, FontSize } from '@/lib/appearance-context';
@@ -38,6 +39,7 @@ interface Overlays {
   search: boolean;
   shortcuts: boolean;
   info: boolean;
+  createChannel: boolean;
 }
 
 interface CallState {
@@ -90,7 +92,7 @@ export default function WorkspacePage({
   const [active, setActive] = useState<ActiveView>({ type: 'channel', id: 'engineering' });
   const [threadId, setThreadId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [ov, setOv] = useState<Overlays>({ search: false, shortcuts: false, info: false });
+  const [ov, setOv] = useState<Overlays>({ search: false, shortcuts: false, info: false, createChannel: false });
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [call, setCall] = useState<CallState>({ open: false, muted: false, camOff: false, sharing: false });
   const { show: flashToast } = useToast();
@@ -232,7 +234,7 @@ export default function WorkspacePage({
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
       const k = e.key;
       const ctrl = e.ctrlKey || e.metaKey;
-      const modalOpen = ov.search || ov.shortcuts || call.open || ov.info;
+      const modalOpen = ov.search || ov.shortcuts || call.open || ov.info || ov.createChannel;
 
       if ((k === '?' && !typing) || (ctrl && k === '/')) {
         e.preventDefault();
@@ -317,6 +319,7 @@ export default function WorkspacePage({
           channels={workspaceChannels}
           channelsLoading={channelsQuery.isLoading && workspaceChannels.length === 0}
           onSelect={onSelect}
+          openAddChannel={() => setOv((o) => ({ ...o, createChannel: true }))}
           openSearch={() => setOv((o) => ({ ...o, search: true }))}
           openSettings={() => undefined}
           openShortcuts={() => setOv((o) => ({ ...o, shortcuts: true }))}
@@ -368,6 +371,16 @@ export default function WorkspacePage({
             state={call}
             setState={setCall}
             onEnd={() => { setCall((c) => ({ ...c, open: false })); flashToast('Call ended'); }}
+          />
+        )}
+        {ov.createChannel && (
+          <CreateChannelModal
+            workspaceId={me.currentWorkspace.id}
+            onClose={() => setOv((o) => ({ ...o, createChannel: false }))}
+            onCreated={(channel) => {
+              setOv((o) => ({ ...o, createChannel: false, info: false }));
+              selectChannel(channel.id);
+            }}
           />
         )}
         {profileUser && (
