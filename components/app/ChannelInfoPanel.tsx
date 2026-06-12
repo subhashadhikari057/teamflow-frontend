@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import { CHANNELS, USERS, MEMBERS } from '@/lib/data';
+import type { ChannelSummary } from '@/lib/api/types';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -12,6 +13,7 @@ interface ActiveView {
 
 interface Props {
   active: ActiveView;
+  channels: ChannelSummary[];
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
 }
@@ -27,30 +29,34 @@ const PRESENCE_COLOR: Record<string, string> = {
 const CHANNEL_TABS = ['About', 'Members', 'Files', 'Pinned'] as const;
 const DM_TABS      = ['Profile', 'Files', 'Pinned'] as const;
 
-type ChannelTab = typeof CHANNEL_TABS[number];
-type DmTab      = typeof DM_TABS[number];
-
 // ── About tab ────────────────────────────────────────────────────────
 
-function AboutTab({ channelId }: { channelId: string }) {
-  const channel = CHANNELS.find((c) => c.id === channelId)!;
+function AboutTab({
+  description,
+  topic,
+  memberCount,
+}: {
+  description: string;
+  topic: string;
+  memberCount: number;
+}) {
   return (
     <div className="p-4 space-y-5">
       {/* Description */}
       <div>
         <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Description</div>
-        <p className="text-[13px] text-sub leading-[1.65]">{channel.desc}</p>
+        <p className="text-[13px] text-sub leading-[1.65]">{description}</p>
       </div>
 
       {/* Topic */}
       <div>
         <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Topic</div>
-        <p className="text-[13px] text-muted italic">No topic set</p>
+        <p className={`text-[13px] ${topic === 'No topic set' ? 'text-muted italic' : 'text-sub'}`}>{topic}</p>
       </div>
 
       {/* Meta */}
       <div className="space-y-2.5">
-        <MetaRow icon="users" label="Members"  value={String(channel.members)} />
+        <MetaRow icon="users" label="Members"  value={String(memberCount)} />
         <MetaRow icon="hash"  label="Created"  value="Jan 14, 2024" />
         <MetaRow icon="at"    label="Created by" value="Ashim Shrestha" />
       </div>
@@ -220,10 +226,15 @@ function Empty({ icon, text, sub }: { icon: string; text: string; sub?: string }
 
 // ── Root ─────────────────────────────────────────────────────────────
 
-export default function ChannelInfoPanel({ active, onClose, onOpenProfile }: Props) {
-  const isDm    = active.type === 'dm';
-  const channel = !isDm ? CHANNELS.find((c) => c.id === active.id) : null;
-  const dmUser  = isDm  ? USERS[active.id] : null;
+export default function ChannelInfoPanel({ active, channels, onClose, onOpenProfile }: Props) {
+  const isDm = active.type === 'dm';
+  const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
+  const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
+  const channelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
+  const channelDescription = apiChannel?.description?.trim() || fallbackChannel?.desc || 'No description set';
+  const channelTopic = apiChannel?.topic?.trim() || 'No topic set';
+  const channelMemberCount = apiChannel?.memberCount ?? fallbackChannel?.members ?? 0;
+  const dmUser  = isDm ? USERS[active.id] : null;
 
   const tabs = isDm ? DM_TABS : CHANNEL_TABS;
   const [tab, setTab] = useState<string>(tabs[0]);
@@ -239,7 +250,7 @@ export default function ChannelInfoPanel({ active, onClose, onOpenProfile }: Pro
           ) : (
             <div className="flex items-center gap-1 min-w-0">
               <span className="text-muted text-[15px]">#</span>
-              <span className="text-[15px] font-semibold text-ink tracking-tightest truncate">{channel!.name}</span>
+              <span className="text-[15px] font-semibold text-ink tracking-tightest truncate">{channelName}</span>
             </div>
           )}
         </div>
@@ -271,7 +282,13 @@ export default function ChannelInfoPanel({ active, onClose, onOpenProfile }: Pro
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
-        {!isDm && tab === 'About'   && <AboutTab   channelId={active.id} />}
+        {!isDm && tab === 'About'   && (
+          <AboutTab
+            description={channelDescription}
+            topic={channelTopic}
+            memberCount={channelMemberCount}
+          />
+        )}
         {!isDm && tab === 'Members' && <MembersTab onOpenProfile={onOpenProfile} />}
         {tab === 'Files'            && <FilesTab />}
         {tab === 'Pinned'           && <PinnedTab />}

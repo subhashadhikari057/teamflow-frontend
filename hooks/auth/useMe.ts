@@ -9,8 +9,8 @@ import {
 
 export const ME_KEY = ['me'] as const;
 
-export function useMe() {
-  const enabled = useHasAuthHint();
+export function useMe(initialData?: AuthUser | null) {
+  const enabled = useHasAuthHint() || Boolean(initialData);
 
   return useQuery<AuthUser, Error>({
     queryKey: ME_KEY,
@@ -29,6 +29,7 @@ export function useMe() {
       }
     },
     enabled,
+    initialData: initialData ?? undefined,
     retry: false,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,

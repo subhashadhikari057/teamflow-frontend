@@ -6,13 +6,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
-import { CHANNELS, DMS, USERS } from '@/lib/data';
+import { DMS, USERS } from '@/lib/data';
 import { ME_KEY, useCurrentUser, useLogout } from '@/hooks/auth';
 import { authApi } from '@/lib/api/auth';
 import { getWorkspaceErrorMessage } from '@/lib/api/errors';
 import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
-import type { UserStatus, WorkspaceSummary } from '@/lib/api/types';
+import type { ChannelSummary, UserStatus, WorkspaceSummary } from '@/lib/api/types';
 import { getSettingsPath, getWorkspacePath } from '@/lib/workspace-routing';
 
 const STATUS_COLOR: Record<UserStatus, string> = {
@@ -47,6 +47,8 @@ interface ActiveView {
 interface SidebarProps {
   collapsed: boolean;
   active: ActiveView;
+  channels: ChannelSummary[];
+  channelsLoading: boolean;
   onSelect: (a: ActiveView) => void;
   openSearch: () => void;
   openSettings: () => void;
@@ -109,7 +111,7 @@ function WorkspaceAvatar({
 }
 
 export default function Sidebar({
-  collapsed, active, onSelect, openSearch, openSettings, openShortcuts, openProfile, openCompose,
+  collapsed, active, channels, channelsLoading, onSelect, openSearch, openSettings, openShortcuts, openProfile, openCompose,
 }: SidebarProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -374,40 +376,50 @@ export default function Sidebar({
           </div>
 
           {(chanOpen || collapsed) && (
-            <div className="space-y-0.5">
-              {CHANNELS.map((c) => {
-                const isActive = active.type === 'channel' && active.id === c.id;
-                const unread = c.unread > 0;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => onSelect({ type: 'channel', id: c.id })}
-                    style={{ fontSize: 'var(--fs, 14px)' }}
-                    className={`w-full flex items-center gap-1.5 rounded-md px-2.5 h-7 transition ${
-                      isActive
-                        ? 'bg-elevated text-ink'
-                        : unread
-                        ? 'text-ink hover:bg-elevated'
-                        : 'text-sub hover:bg-elevated hover:text-ink'
-                    } ${collapsed ? 'justify-center px-0' : ''}`}
-                  >
-                    {collapsed ? (
-                      <Icon name="hash" size={15} />
-                    ) : (
-                      <span className="text-muted">#</span>
-                    )}
-                    {!collapsed && (
-                      <span className={`truncate ${unread ? 'font-semibold' : ''}`}>{c.name}</span>
-                    )}
-                    {!collapsed && unread && (
-                      <span className="ml-auto text-[11px] font-semibold bg-white text-black rounded px-1.5 py-px">
-                        {c.unread}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              {channelsLoading ? (
+                <div className={`text-[12px] text-muted ${collapsed ? 'text-center' : 'px-2.5 py-1'}`}>
+                  {collapsed ? '…' : 'Loading…'}
+                </div>
+              ) : channels.length === 0 ? (
+                !collapsed ? (
+                  <div className="px-2.5 py-1 text-[12px] text-muted">No channels yet</div>
+                ) : null
+              ) : (
+                <div className="space-y-0.5">
+                  {channels.map((channel) => {
+                    const isActive = active.type === 'channel' && active.id === channel.id;
+                    const iconName = channel.type === 'PRIVATE' ? 'lock' : 'hash';
+
+                    return (
+                      <button
+                        key={channel.id}
+                        onClick={() => onSelect({ type: 'channel', id: channel.id })}
+                        style={{ fontSize: 'var(--fs, 14px)' }}
+                        className={`w-full flex items-center gap-1.5 rounded-md px-2.5 h-7 transition ${
+                          isActive
+                            ? 'bg-elevated text-ink'
+                            : 'text-sub hover:bg-elevated hover:text-ink'
+                        } ${collapsed ? 'justify-center px-0' : ''}`}
+                      >
+                        {collapsed ? (
+                          <Icon name={iconName} size={15} />
+                        ) : (
+                          <span className="text-muted">
+                            {channel.type === 'PRIVATE' ? <Icon name="lock" size={13} /> : '#'}
+                          </span>
+                        )}
+                        {!collapsed && (
+                          <span className={`truncate ${channel.isGeneral ? 'font-semibold text-ink' : ''}`}>
+                            {channel.name}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
 

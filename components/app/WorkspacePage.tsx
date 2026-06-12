@@ -14,11 +14,19 @@ import ChannelInfoPanel from '@/components/app/ChannelInfoPanel';
 import { useToast } from '@/lib/toast-context';
 import { AppearanceContext } from '@/lib/appearance-context';
 import type { Density, FontSize } from '@/lib/appearance-context';
+import {
+  setDensityPreference,
+  setFontSizePreference,
+  useDensityPreference,
+  useFontSizePreference,
+} from '@/lib/appearance-preferences';
 import { CHANNELS } from '@/lib/data';
 import { useMe, ME_KEY } from '@/hooks/auth';
 import { authApi } from '@/lib/api/auth';
+import { channelsApi } from '@/lib/api/channels';
 import { workspacesApi } from '@/lib/api/workspaces';
-import { clearOauthIntent, getOauthIntent, hasSessionHint } from '@/lib/auth-session-hint';
+import { clearOauthIntent, getOauthIntent, setSessionHint } from '@/lib/auth-session-hint';
+import type { AuthUser, ChannelSummary, WorkspaceSummary } from '@/lib/api/types';
 import { getWorkspacePath } from '@/lib/workspace-routing';
 
 interface ActiveView {
@@ -41,16 +49,35 @@ interface CallState {
 
 interface WorkspacePageProps {
   routeWorkspaceSlug: string;
+  initialUser?: AuthUser | null;
+  initialWorkspaces?: WorkspaceSummary[] | null;
+  initialChannels?: ChannelSummary[] | null;
 }
 
-export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps) {
+export default function WorkspacePage({
+  routeWorkspaceSlug,
+  initialUser = null,
+  initialWorkspaces = null,
+  initialChannels = null,
+}: WorkspacePageProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data: me, isLoading: isMeLoading, isError: isMeError } = useMe();
+  const { data: me, isError: isMeError } = useMe(initialUser);
   const workspacesQuery = useQuery({
     queryKey: ['workspaces'],
     queryFn: workspacesApi.list,
     enabled: Boolean(me),
+    initialData: initialWorkspaces ?? undefined,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const channelsQuery = useQuery({
+    queryKey: ['channels', me?.currentWorkspace?.id],
+    queryFn: () => channelsApi.list(me?.currentWorkspace?.id as string),
+    enabled: Boolean(me?.currentWorkspace?.id),
+    initialData: me?.currentWorkspace?.id === initialUser?.currentWorkspace?.id
+      ? (initialChannels ?? undefined)
+      : undefined,
     retry: false,
     staleTime: 60_000,
   });
@@ -67,22 +94,31 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [call, setCall] = useState<CallState>({ open: false, muted: false, camOff: false, sharing: false });
   const { show: flashToast } = useToast();
-  const [density, setDensityRaw] = useState<Density>('comfortable');
-  const [fontSize, setFontSizeRaw] = useState<FontSize>('default');
-  const [mounted, setMounted] = useState(false);
+  const density = useDensityPreference();
+  const fontSize = useFontSizePreference();
   const hasUserWithoutWorkspace = Boolean(me && !me.currentWorkspace?.id);
   const workspacePath = getWorkspacePath(me?.currentWorkspace?.slug);
-
+  const workspaceChannels = channelsQuery.data ?? [];
+  const fallbackChannelIds = CHANNELS.map((channel) => channel.id);
+  const navigableChannelIds = workspaceChannels.length > 0
+    ? workspaceChannels.map((channel) => channel.id)
+    : fallbackChannelIds;
+  const defaultChannelId = workspaceChannels.find((channel) => channel.isGeneral)?.id
+    ?? workspaceChannels[0]?.id
+    ?? fallbackChannelIds[0]
+    ?? 'general';
+  const activeChannelExists = active.type !== 'channel'
+    || !workspaceChannels.length
+    || workspaceChannels.some((channel) => channel.id === active.id);
+  const effectiveActive = active.type === 'channel' && !activeChannelExists
+    ? { type: 'channel' as const, id: defaultChannelId }
+    : active;
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!hasSessionHint()) {
-      router.replace('/login');
+    if (me) {
+      setSessionHint();
     }
-  }, [router]);
+  }, [me]);
 
   useEffect(() => {
     if (isMeError) {
@@ -132,11 +168,6 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
   }, [me?.currentWorkspace?.slug, routeWorkspaceSlug, router, workspacePath]);
 
   useEffect(() => {
-    const d = localStorage.getItem('tf-density') as Density | null;
-    const f = localStorage.getItem('tf-fontsize') as FontSize | null;
-    if (d) setDensityRaw(d);
-    if (f) setFontSizeRaw(f);
-
     const oauthWelcome = localStorage.getItem('oauth_welcome');
 
     if (oauthWelcome) {
@@ -149,8 +180,8 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
     }
   }, [flashToast]);
 
-  const setDensity = (d: Density) => { setDensityRaw(d); localStorage.setItem('tf-density', d); };
-  const setFontSize = (f: FontSize) => { setFontSizeRaw(f); localStorage.setItem('tf-fontsize', f); };
+  const setDensity = (d: Density) => { setDensityPreference(d); };
+  const setFontSize = (f: FontSize) => { setFontSizePreference(f); };
 
   const FONT_MAP: Record<FontSize, string> = { small: '13px', default: '14px', large: '16px' };
 
@@ -173,17 +204,22 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
 
   const cycleChannel = useCallback((dir: number) => {
     setActive((cur) => {
-      const ids = CHANNELS.map((c) => c.id);
+      const ids = navigableChannelIds;
       let idx = cur.type === 'channel' ? ids.indexOf(cur.id) : 0;
+      if (idx === -1) {
+        idx = 0;
+      }
       idx = (idx + dir + ids.length) % ids.length;
       return { type: 'channel', id: ids[idx] };
     });
     setThreadId(null);
-  }, []);
+  }, [navigableChannelIds]);
 
   const jumpChannel = useCallback((i: number) => {
-    if (i >= 0 && i < CHANNELS.length) { selectChannel(CHANNELS[i].id); }
-  }, [selectChannel]);
+    if (i >= 0 && i < navigableChannelIds.length) {
+      selectChannel(navigableChannelIds[i]);
+    }
+  }, [navigableChannelIds, selectChannel]);
 
   const openCompose = useCallback(() => {
     selectDm('sarah');
@@ -252,8 +288,7 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
   }, [ov, call, threadId, cycleChannel, jumpChannel, flashToast, openCompose, selectChannel, selectDm]);
 
   if (
-    !mounted ||
-    isMeLoading ||
+    (!me && !isMeError) ||
     (hasUserWithoutWorkspace && (workspacesQuery.isLoading || setCurrentWorkspace.isPending))
   ) {
     return (
@@ -278,7 +313,9 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
       <div className="h-screen flex overflow-hidden" style={{ '--fs': FONT_MAP[fontSize] } as React.CSSProperties}>
         <Sidebar
           collapsed={collapsed}
-          active={active}
+          active={effectiveActive}
+          channels={workspaceChannels}
+          channelsLoading={channelsQuery.isLoading && workspaceChannels.length === 0}
           onSelect={onSelect}
           openSearch={() => setOv((o) => ({ ...o, search: true }))}
           openSettings={() => undefined}
@@ -288,7 +325,8 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
         />
 
         <ChannelView
-          active={active}
+          active={effectiveActive}
+          channels={workspaceChannels}
           onToggleSidebar={() => setCollapsed((c) => !c)}
           openSearch={() => setOv((o) => ({ ...o, search: true }))}
           openCall={() => setCall((c) => ({ ...c, open: true }))}
@@ -300,7 +338,8 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
 
         {ov.info && (
           <ChannelInfoPanel
-            active={active}
+            active={effectiveActive}
+            channels={workspaceChannels}
             onClose={() => setOv((o) => ({ ...o, info: false }))}
             onOpenProfile={setProfileUser}
           />

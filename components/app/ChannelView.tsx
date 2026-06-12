@@ -7,7 +7,8 @@ import Tooltip from '@/components/primitives/Tooltip';
 import Badge from '@/components/primitives/Badge';
 import MessageBody from './MessageBody';
 import Composer from './Composer';
-import { CHANNELS, DMS, ENG_MESSAGES, USERS } from '@/lib/data';
+import { CHANNELS, ENG_MESSAGES, USERS } from '@/lib/data';
+import type { ChannelSummary } from '@/lib/api/types';
 import type { Message } from '@/lib/types';
 import { useAppearance } from '@/lib/appearance-context';
 
@@ -18,6 +19,7 @@ interface ActiveView {
 
 interface ChannelViewProps {
   active: ActiveView;
+  channels: ChannelSummary[];
   onToggleSidebar: () => void;
   openSearch: () => void;
   openCall: () => void;
@@ -164,11 +166,18 @@ function MessageRow({
 }
 
 export default function ChannelView({
-  active, onToggleSidebar, openSearch, openCall, openThread, openProfile, openInfo, infoOpen,
+  active, channels, onToggleSidebar, openSearch, openCall, openThread, openProfile, openInfo, infoOpen,
 }: ChannelViewProps) {
   const { density } = useAppearance();
   const isDm = active.type === 'dm';
-  const channel = !isDm ? CHANNELS.find((c) => c.id === active.id) : null;
+  const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
+  const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
+  const channelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
+  const channelDescription = apiChannel?.description?.trim() || fallbackChannel?.desc || 'No description yet.';
+  const channelMemberCount = apiChannel?.memberCount ?? fallbackChannel?.members ?? 0;
+  const channelIntro = channelDescription === 'No description yet.'
+    ? 'This channel is ready for your team.'
+    : `${channelDescription}${/[.!?]$/.test(channelDescription) ? '' : '.'} This is the very beginning of the channel.`;
   const dmUser = isDm ? USERS[active.id] : null;
 
   const [messages, setMessages] = useState<Message[]>(ENG_MESSAGES);
@@ -176,6 +185,8 @@ export default function ChannelView({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const nextChannelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
+
     if (isDm) {
       setMessages([
         {
@@ -187,18 +198,18 @@ export default function ChannelView({
           body: 'Just reviewing now — looks great. Leaving a couple comments.',
         },
       ]);
-    } else if (active.id === 'engineering') {
+    } else if (nextChannelName === 'engineering') {
       setMessages(ENG_MESSAGES);
     } else {
       setMessages([
         {
           id: 'g1', userId: 'sarah', time: '8:15 AM', reactions: [],
-          body: `Welcome to **#${active.id}** 👋 — this is the start of the channel.`,
+          body: `Welcome to **#${nextChannelName}** 👋 — this is the start of the channel.`,
         },
       ]);
     }
     setEditing(null);
-  }, [active.type, active.id, isDm]);
+  }, [active.id, active.type, apiChannel?.name, fallbackChannel?.name, isDm]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -247,14 +258,14 @@ export default function ChannelView({
               <div className="flex items-center gap-1.5">
                 <span className="text-muted text-[16px]">#</span>
                 <span className="text-[15px] font-semibold text-ink tracking-tightest truncate">
-                  {channel!.name}
+                  {channelName}
                 </span>
                 <Icon name="chevdown" size={14} className="text-sub" />
               </div>
             </div>
             <div className="h-5 w-px bg-divider mx-1 hidden sm:block" />
             <span className="text-[13px] text-sub truncate hidden sm:block max-w-[280px]">
-              {channel!.desc}
+              {channelDescription}
             </span>
           </div>
         )}
@@ -267,7 +278,7 @@ export default function ChannelView({
                   <Avatar key={id} userId={id} size={24} presence={false} ring />
                 ))}
               </div>
-              <span className="text-[12px] text-sub">{channel!.members}</span>
+              <span className="text-[12px] text-sub">{channelMemberCount}</span>
             </div>
           )}
 
@@ -321,11 +332,9 @@ export default function ChannelView({
               <Icon name="hash" size={22} />
             </div>
             <h2 className="text-[22px] font-bold tracking-tightest text-ink">
-              Welcome to #{channel!.name}
+              Welcome to #{channelName}
             </h2>
-            <p className="text-[14px] text-sub mt-1">
-              {channel!.desc}. This is the very beginning of the channel.
-            </p>
+            <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
           </div>
         )}
 
@@ -335,7 +344,7 @@ export default function ChannelView({
           ))}
         </div>
 
-        {!isDm && active.id === 'engineering' && (
+        {!isDm && channelName === 'engineering' && (
           <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
             <Avatar userId="sarah" size={22} presence={false} />
             <span>Sarah is typing<span>.</span><span>.</span><span>.</span></span>
@@ -344,7 +353,7 @@ export default function ChannelView({
       </div>
 
       <Composer
-        channelName={isDm ? dmUser!.name : `#${channel!.name}`}
+        channelName={isDm ? dmUser!.name : `#${channelName}`}
         onSend={handleSend}
         editing={editing}
         setEditing={setEditing}
