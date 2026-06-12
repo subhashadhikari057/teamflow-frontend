@@ -1,15 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
 import { CHANNELS, DMS, USERS } from '@/lib/data';
-import { useLogout, useCurrentUser } from '@/hooks/auth';
+import { ME_KEY, useCurrentUser, useLogout } from '@/hooks/auth';
+import { authApi } from '@/lib/api/auth';
+import { getWorkspaceErrorMessage } from '@/lib/api/errors';
+import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
-import type { UserStatus } from '@/lib/api/types';
-import { getSettingsPath } from '@/lib/workspace-routing';
+import type { UserStatus, WorkspaceSummary } from '@/lib/api/types';
+import { getSettingsPath, getWorkspacePath } from '@/lib/workspace-routing';
 
 const STATUS_COLOR: Record<UserStatus, string> = {
   ONLINE:         '#22c55e',
@@ -73,18 +77,107 @@ function SidebarItem({
   );
 }
 
+function WorkspaceAvatar({
+  workspace,
+  size = 32,
+}: {
+  workspace: Pick<WorkspaceSummary, 'logoUrl' | 'name'>;
+  size?: number;
+}) {
+  const workspaceInitial = workspace.name.trim().charAt(0).toUpperCase() || 'N';
+
+  if (workspace.logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={workspace.logoUrl}
+        alt={workspace.name}
+        className="rounded-md object-cover shrink-0"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="rounded-md bg-white text-black flex items-center justify-center font-bold shrink-0"
+      style={{ width: size, height: size, fontSize: Math.max(12, Math.floor(size * 0.44)) }}
+    >
+      {workspaceInitial}
+    </div>
+  );
+}
+
 export default function Sidebar({
   collapsed, active, onSelect, openSearch, openSettings, openShortcuts, openProfile, openCompose,
 }: SidebarProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const toast   = useToast();
   const logout  = useLogout();
   const me      = useCurrentUser();
-  const workspaceName = me?.currentWorkspace?.name ?? 'Nomor';
+  const workspacesQuery = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: workspacesApi.list,
+    enabled: Boolean(me),
+    refetchOnMount: 'always',
+    staleTime: 60_000,
+  });
+  const workspaceName = me?.currentWorkspace?.name ?? 'Workspace';
   const workspaceSlug = me?.currentWorkspace?.slug ?? null;
-  const workspaceInitial = workspaceName.trim().charAt(0).toUpperCase() || 'N';
+  const currentWorkspace = workspacesQuery.data?.find((workspace) => workspace.id === me?.currentWorkspace?.id) ?? null;
+  const workspaceAvatarSource = currentWorkspace ?? {
+    name: workspaceName,
+    logoUrl: null,
+  };
   const [chanOpen, setChanOpen] = useState(true);
   const [dmOpen, setDmOpen] = useState(true);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const workspaceMenuRef = useRef<HTMLDivElement>(null);
+  const switchWorkspace = useMutation({
+    mutationFn: (workspaceId: string) => authApi.setCurrentWorkspace({ workspaceId }),
+    onSuccess: (user, workspaceId) => {
+      const nextWorkspace = workspacesQuery.data?.find((workspace) => workspace.id === workspaceId);
+
+      queryClient.setQueryData(ME_KEY, user);
+
+      if (nextWorkspace) {
+        queryClient.setQueryData(['workspace', nextWorkspace.id], nextWorkspace);
+      }
+
+      setWorkspaceMenuOpen(false);
+      router.replace(getWorkspacePath(user.currentWorkspace?.slug ?? nextWorkspace?.slug));
+    },
+    onError: (error) => {
+      toast.error(getWorkspaceErrorMessage(error));
+    },
+  });
+
+  useEffect(() => {
+    if (!workspaceMenuOpen) {
+      return;
+    }
+
+    function handleClick(event: MouseEvent) {
+      if (workspaceMenuRef.current && !workspaceMenuRef.current.contains(event.target as Node)) {
+        setWorkspaceMenuOpen(false);
+      }
+    }
+
+    function handleKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setWorkspaceMenuOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKeydown);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKeydown);
+    };
+  }, [workspaceMenuOpen]);
 
   async function handleLogout() {
     try {
@@ -96,6 +189,21 @@ export default function Sidebar({
     router.push('/login');
   }
 
+  function handleWorkspaceSelect(workspace: WorkspaceSummary) {
+    if (workspace.id === me?.currentWorkspace?.id) {
+      setWorkspaceMenuOpen(false);
+      return;
+    }
+
+    switchWorkspace.mutate(workspace.id);
+  }
+
+  function goToWorkspaceSettings() {
+    setWorkspaceMenuOpen(false);
+    openSettings();
+    router.push(getSettingsPath(workspaceSlug));
+  }
+
   return (
     <aside
       className={`flex flex-col bg-sidebar border-r border-divider shrink-0 transition-all duration-150 ${
@@ -104,23 +212,101 @@ export default function Sidebar({
     >
       {/* Workspace header */}
       <div className="h-14 flex items-center px-3 border-b border-divider">
-        <button
-          className={`flex items-center gap-2.5 rounded-md hover:bg-elevated transition px-1.5 h-10 ${
-            collapsed ? 'justify-center w-full' : 'flex-1'
-          }`}
+        <div
+          ref={workspaceMenuRef}
+          className={`relative ${collapsed ? 'w-full' : 'flex-1'}`}
         >
-          <div className="w-8 h-8 rounded-md bg-white text-black flex items-center justify-center text-[14px] font-bold shrink-0">
-            {workspaceInitial}
-          </div>
-          {!collapsed && (
-            <>
-              <span className="text-[15px] font-semibold text-ink tracking-tightest flex-1 text-left truncate">
-                {workspaceName}
-              </span>
-              <Icon name="chevdown" size={15} className="text-sub" />
-            </>
+          <button
+            onClick={() => {
+              if (!workspaceMenuOpen) {
+                void workspacesQuery.refetch();
+              }
+
+              setWorkspaceMenuOpen((open) => !open);
+            }}
+            aria-haspopup="menu"
+            aria-expanded={workspaceMenuOpen}
+            className={`flex items-center gap-2.5 rounded-md hover:bg-elevated transition px-1.5 h-10 ${
+              collapsed ? 'justify-center w-full' : 'w-full'
+            }`}
+          >
+            <WorkspaceAvatar workspace={workspaceAvatarSource} />
+            {!collapsed && (
+              <>
+                <span className="text-[15px] font-semibold text-ink tracking-tightest flex-1 text-left truncate">
+                  {workspaceName}
+                </span>
+                <Icon
+                  name="chevdown"
+                  size={15}
+                  className={`text-sub transition-transform ${workspaceMenuOpen ? 'rotate-180' : ''}`}
+                />
+              </>
+            )}
+          </button>
+
+          {workspaceMenuOpen && (
+            <div
+              className={`absolute z-40 top-[calc(100%+8px)] rounded-lg border border-line bg-panel shadow-xl p-2 ${
+                collapsed ? 'left-0 w-[280px]' : 'left-0 right-0'
+              }`}
+            >
+              <div className="px-2 pt-1 pb-2">
+                <div className="text-[11px] uppercase tracking-wider text-muted">Your workspaces</div>
+              </div>
+
+              {workspacesQuery.isLoading ? (
+                <div className="px-2 py-3 text-[13px] text-sub">Loading workspaces…</div>
+              ) : workspacesQuery.isError ? (
+                <div className="px-2 py-3 text-[13px] text-sub">
+                  We couldn&apos;t load your workspaces right now.
+                </div>
+              ) : (
+                <div className="space-y-1 max-h-[280px] overflow-y-auto no-scrollbar">
+                  {(workspacesQuery.data ?? []).map((workspace) => {
+                    const isCurrent = workspace.id === me?.currentWorkspace?.id;
+                    const isSwitching = switchWorkspace.isPending && switchWorkspace.variables === workspace.id;
+
+                    return (
+                      <button
+                        key={workspace.id}
+                        onClick={() => handleWorkspaceSelect(workspace)}
+                        disabled={switchWorkspace.isPending}
+                        className={`w-full flex items-center gap-3 rounded-md px-2 py-2 text-left transition ${
+                          isCurrent
+                            ? 'bg-elevated text-ink'
+                            : 'text-sub hover:bg-elevated hover:text-ink'
+                        }`}
+                      >
+                        <WorkspaceAvatar workspace={workspace} />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[13px] font-medium truncate">{workspace.name}</div>
+                          <div className="text-[11px] text-sub truncate">teamflow.io/{workspace.slug}</div>
+                        </div>
+                        {isSwitching ? (
+                          <span className="text-[11px] text-sub">Switching…</span>
+                        ) : isCurrent ? (
+                          <Icon name="check" size={14} className="text-ink shrink-0" />
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="mt-2 border-t border-divider pt-2">
+                <button
+                  onClick={goToWorkspaceSettings}
+                  className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-[13px] text-sub hover:bg-elevated hover:text-ink transition"
+                >
+                  <Icon name="settings" size={14} />
+                  Workspace settings
+                </button>
+              </div>
+            </div>
           )}
-        </button>
+        </div>
+
         {!collapsed && (
           <Tooltip label="New message" keys={['Ctrl', 'T']} side="bottom">
             <button
@@ -291,6 +477,7 @@ export default function Sidebar({
         >
           {/* Avatar */}
           {me?.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={me.avatarUrl} alt={me.name} className="shrink-0 rounded-md object-cover" style={{ width: 30, height: 30 }} />
           ) : (
             <div
@@ -322,7 +509,7 @@ export default function Sidebar({
           <>
             <Tooltip label="Settings" side="top">
               <button
-                onClick={() => router.push(getSettingsPath(workspaceSlug))}
+                onClick={goToWorkspaceSettings}
                 className="w-7 h-7 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition"
               >
                 <Icon name="settings" size={15} />
