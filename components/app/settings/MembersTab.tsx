@@ -28,15 +28,6 @@ const ROLE_LABELS: Record<WorkspaceRole, string> = {
 const ROLE_OPTIONS: RoleFilter[] = ['All', 'OWNER', 'ADMIN', 'MEMBER', 'GUEST'];
 const MEMBER_QUERY_KEY = 'workspace-members';
 const INVITE_QUERY_KEY = 'workspace-invites';
-const INVITE_ROLE_OPTIONS: Array<{
-  role: WorkspaceRole;
-  label: string;
-  description: string;
-}> = [
-  { role: 'ADMIN', label: 'Admin', description: 'Can manage people, channels, and workspace settings.' },
-  { role: 'MEMBER', label: 'Member', description: 'Can participate fully across the workspace.' },
-  { role: 'GUEST', label: 'Guest', description: 'Gets limited access for scoped collaboration.' },
-];
 
 function getRoleLabel(role: WorkspaceRole) {
   return ROLE_LABELS[role];
@@ -86,6 +77,10 @@ function normalizeEmails(input: string) {
   ));
 }
 
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function MemberAvatar({ member }: { member: WorkspaceMemberSummary }) {
   if (member.avatarUrl) {
     return (
@@ -129,37 +124,45 @@ function EmptyState({
 function InviteMembersDialog({
   open,
   emails,
+  emailInput,
   role,
   isPending,
-  onEmailsChange,
+  onEmailInputChange,
+  onAddEmail,
+  onRemoveEmail,
+  onEmailKeyDown,
+  onEmailPaste,
   onRoleChange,
   onSubmit,
   onClose,
 }: {
   open: boolean;
-  emails: string;
+  emails: string[];
+  emailInput: string;
   role: WorkspaceRole;
   isPending: boolean;
-  onEmailsChange: (value: string) => void;
+  onEmailInputChange: (value: string) => void;
+  onAddEmail: () => void;
+  onRemoveEmail: (email: string) => void;
+  onEmailKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onEmailPaste: (event: React.ClipboardEvent<HTMLInputElement>) => void;
   onRoleChange: (value: WorkspaceRole) => void;
   onSubmit: () => void;
   onClose: () => void;
 }) {
   if (!open) return null;
 
-  const normalizedEmails = normalizeEmails(emails);
-
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl bg-panel border border-line rounded-2xl p-6 shadow-2xl">
+      <div className="w-full max-w-lg bg-panel border border-line rounded-2xl p-6 shadow-2xl space-y-5">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="w-11 h-11 rounded-xl bg-elevated border border-line flex items-center justify-center mb-3">
+          <div>
+            <div className="w-10 h-10 rounded-xl bg-elevated border border-line flex items-center justify-center mb-3">
               <Icon name="users" size={18} className="text-sub" />
             </div>
-            <h3 className="text-[17px] font-semibold text-ink">Invite people</h3>
+            <h3 className="text-[16px] font-semibold text-ink">Invite people</h3>
             <p className="text-[13px] text-sub mt-1 leading-relaxed">
-              Add one email per line or separate addresses with commas. Everyone invited here will join with the role you choose below.
+              Type one email at a time and press Enter or comma to add it.
             </p>
           </div>
           <button
@@ -173,98 +176,78 @@ function InviteMembersDialog({
           </button>
         </div>
 
-        <div className="mt-6 grid gap-6 md:grid-cols-[minmax(0,1.35fr)_minmax(220px,0.95fr)]">
-          <div className="min-w-0 space-y-5">
-            <div>
-              <div className="flex items-center justify-between gap-3 mb-1.5">
-                <label className="block text-[13px] font-medium text-ink">Email addresses</label>
-                <span className="text-[12px] text-sub">
-                  {normalizedEmails.length} {normalizedEmails.length === 1 ? 'recipient' : 'recipients'}
-                </span>
-              </div>
-              <textarea
-                value={emails}
-                onChange={(event) => onEmailsChange(event.target.value)}
-                placeholder={'alex@company.com\njamie@company.com'}
-                className="w-full min-h-[180px] px-3 py-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition resize-none leading-[1.55]"
-              />
-              <div className="flex items-center gap-2 mt-2 text-[12px] text-sub">
-                <Icon name="info" size={13} className="shrink-0" />
-                <span>Duplicate addresses are collapsed before sending.</span>
+        <div className="space-y-4">
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <label className="block text-[13px] font-medium text-ink">Email addresses</label>
+              <span className="text-[12px] text-sub">
+                {emails.length} {emails.length === 1 ? 'recipient' : 'recipients'}
+              </span>
+            </div>
+            <div className="min-h-[124px] rounded-md bg-elevated border border-line px-3 py-2.5 focus-within:border-[#555555] focus-within:ring-2 focus-within:ring-white/20 transition">
+              <div className="flex flex-wrap items-center gap-2">
+                {emails.map((email) => (
+                  <span
+                    key={email}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-panel border border-divider px-2.5 py-1 text-[12px] text-ink"
+                  >
+                    <span>{email}</span>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveEmail(email)}
+                      disabled={isPending}
+                      className="text-muted hover:text-ink transition disabled:opacity-40"
+                      aria-label={`Remove ${email}`}
+                    >
+                      <Icon name="x" size={12} />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={emailInput}
+                  onChange={(event) => onEmailInputChange(event.target.value)}
+                  onKeyDown={onEmailKeyDown}
+                  onPaste={onEmailPaste}
+                  placeholder={emails.length === 0 ? 'alex@company.com' : 'Add another email'}
+                  className="flex-1 min-w-[180px] h-8 bg-transparent text-[14px] text-ink placeholder:text-muted outline-none"
+                  autoFocus
+                />
               </div>
             </div>
-
-            <div>
-              <label className="block text-[13px] font-medium text-ink mb-2">Role</label>
-              <div className="grid gap-2">
-                {INVITE_ROLE_OPTIONS.map((option) => {
-                  const selected = role === option.role;
-
-                  return (
-                    <button
-                      key={option.role}
-                      type="button"
-                      onClick={() => onRoleChange(option.role)}
-                      className={`w-full text-left rounded-lg border px-3 py-3 transition ${
-                        selected
-                          ? 'border-white bg-panel text-ink'
-                          : 'border-line bg-elevated text-sub hover:border-[#555555] hover:text-ink'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-[14px] font-medium">{option.label}</div>
-                          <div className="text-[12px] mt-1 leading-relaxed">{option.description}</div>
-                        </div>
-                        <span
-                          className={`mt-0.5 w-4 h-4 rounded-full border shrink-0 flex items-center justify-center ${
-                            selected ? 'border-white bg-white text-black' : 'border-divider'
-                          }`}
-                        >
-                          {selected && <Icon name="check" size={11} strokeWidth={2.25} />}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="flex items-center justify-between gap-3 mt-2 text-[12px] text-sub">
+              <span>Press Enter or comma to add each email.</span>
+              {emailInput.trim() && (
+                <button
+                  type="button"
+                  onClick={onAddEmail}
+                  className="text-sub hover:text-ink transition"
+                >
+                  Add email
+                </button>
+              )}
             </div>
           </div>
 
-          <div className="min-w-0 border-t border-divider pt-5 md:border-t-0 md:border-l md:border-divider md:pl-6 md:pt-0">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <div>
-                <div className="text-[13px] font-medium text-ink">Invite preview</div>
-                <div className="text-[12px] text-sub mt-1">People will join as {getRoleLabel(role).toLowerCase()}s.</div>
-              </div>
-              <span className="inline-flex items-center px-2 py-1 rounded-full border border-line text-[11px] text-sub">
-                {normalizedEmails.length === 0 ? 'No emails yet' : `${normalizedEmails.length} ready`}
-              </span>
-            </div>
-
-            {normalizedEmails.length > 0 ? (
-              <div className="flex flex-wrap gap-2 content-start">
-                {normalizedEmails.map((email) => (
-                  <span
-                    key={email}
-                    className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-elevated border border-line px-2.5 py-1.5 text-[12px] text-ink"
-                  >
-                    <Icon name="at" size={12} className="text-sub shrink-0" />
-                    <span className="truncate">{email}</span>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <div className="h-full min-h-[180px] flex flex-col items-center justify-center text-center text-muted">
-                <Icon name="users" size={20} />
-                <p className="text-[13px] mt-3">Recipients will appear here.</p>
-                <p className="text-[12px] mt-1">Paste or type email addresses to build the invite list.</p>
-              </div>
-            )}
+          <div>
+            <label className="block text-[13px] font-medium text-ink mb-1.5">Role</label>
+            <select
+              value={role}
+              onChange={(event) => onRoleChange(event.target.value as WorkspaceRole)}
+              className="w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink outline-none focus:border-[#555555] transition cursor-pointer"
+            >
+              {(['ADMIN', 'MEMBER', 'GUEST'] as WorkspaceRole[]).map((option) => (
+                <option key={option} value={option}>
+                  {getRoleLabel(option)}
+                </option>
+              ))}
+            </select>
+            <p className="text-[12px] text-sub mt-2">
+              Invited people will join as {getRoleLabel(role).toLowerCase()}s.
+            </p>
           </div>
         </div>
 
-        <div className="flex gap-2 mt-6">
+        <div className="flex gap-2">
           <Button onClick={onSubmit} disabled={isPending} className="flex-1">
             {isPending ? 'Sending invites…' : 'Send invites'}
           </Button>
@@ -287,8 +270,10 @@ export default function MembersTab() {
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('All');
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [inviteEmails, setInviteEmails] = useState('');
+  const [inviteEmails, setInviteEmails] = useState<string[]>([]);
+  const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [inviteRole, setInviteRole] = useState<WorkspaceRole>('MEMBER');
+  const [inviteToRevoke, setInviteToRevoke] = useState<WorkspaceInviteSummary | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<WorkspaceMemberSummary | null>(null);
 
   const membersQuery = useQuery({
@@ -322,7 +307,8 @@ export default function MembersTab() {
     onSuccess: (invites) => {
       refreshPeopleData();
       setInviteDialogOpen(false);
-      setInviteEmails('');
+      setInviteEmails([]);
+      setInviteEmailInput('');
       setInviteRole('MEMBER');
       toast.success(
         invites.length === 1 ? 'Invitation sent' : 'Invitations sent',
@@ -349,9 +335,10 @@ export default function MembersTab() {
   const revokeInvite = useMutation({
     mutationFn: (invite: WorkspaceInviteSummary) =>
       workspacesApi.revokeInvite(workspaceId as string, invite.id),
-    onSuccess: () => {
+    onSuccess: (_, invite) => {
       refreshPeopleData();
-      toast.success('Invitation revoked');
+      setInviteToRevoke(null);
+      toast.success('Invitation revoked', `${invite.email} will no longer be able to join from this invite.`);
     },
     onError: (error) => {
       toast.error(getWorkspaceErrorMessage(error));
@@ -390,19 +377,88 @@ export default function MembersTab() {
     [invitesQuery.data],
   );
 
-  const normalizedInviteEmails = useMemo(
-    () => normalizeEmails(inviteEmails),
-    [inviteEmails],
-  );
+  function addEmails(values: string[]) {
+    const validEmails: string[] = [];
+    const invalidEmails: string[] = [];
+
+    values.forEach((value) => {
+      const email = value.trim().replace(/,+$/, '');
+
+      if (!email) {
+        return;
+      }
+
+      if (isValidEmail(email)) {
+        validEmails.push(email);
+      } else {
+        invalidEmails.push(email);
+      }
+    });
+
+    if (invalidEmails.length > 0) {
+      toast.warning(
+        invalidEmails.length === 1
+          ? `${invalidEmails[0]} is not a valid email.`
+          : 'Some email addresses were skipped because they are invalid.',
+      );
+    }
+
+    if (validEmails.length === 0) {
+      return;
+    }
+
+    setInviteEmails((current) => Array.from(new Set([...current, ...validEmails])));
+  }
+
+  function addCurrentInviteEmail() {
+    if (!inviteEmailInput.trim()) {
+      return;
+    }
+
+    addEmails(normalizeEmails(inviteEmailInput));
+    setInviteEmailInput('');
+  }
+
+  function handleInviteEmailKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' || event.key === ',' || event.key === 'Tab') {
+      if (!inviteEmailInput.trim()) {
+        return;
+      }
+
+      event.preventDefault();
+      addCurrentInviteEmail();
+      return;
+    }
+
+    if (event.key === 'Backspace' && !inviteEmailInput && inviteEmails.length > 0) {
+      event.preventDefault();
+      setInviteEmails((current) => current.slice(0, -1));
+    }
+  }
+
+  function handleInviteEmailPaste(event: React.ClipboardEvent<HTMLInputElement>) {
+    const pasted = event.clipboardData.getData('text');
+
+    if (!/[\n,]/.test(pasted)) {
+      return;
+    }
+
+    event.preventDefault();
+    addEmails(normalizeEmails(pasted));
+  }
 
   function submitInvites() {
-    if (normalizedInviteEmails.length === 0) {
+    const emailsToSend = inviteEmailInput.trim()
+      ? Array.from(new Set([...inviteEmails, ...normalizeEmails(inviteEmailInput).filter(isValidEmail)]))
+      : inviteEmails;
+
+    if (emailsToSend.length === 0) {
       toast.warning('Enter at least one email address.');
       return;
     }
 
     inviteMembers.mutate({
-      emails: normalizedInviteEmails,
+      emails: emailsToSend,
       role: inviteRole,
     });
   }
@@ -581,7 +637,7 @@ export default function MembersTab() {
                     <button
                       type="button"
                       disabled={isResending || isRevoking}
-                      onClick={() => revokeInvite.mutate(invite)}
+                      onClick={() => setInviteToRevoke(invite)}
                       className="text-[12px] text-sub hover:text-danger transition disabled:opacity-40 disabled:pointer-events-none"
                     >
                       {isRevoking ? 'Revoking…' : 'Revoke'}
@@ -597,9 +653,14 @@ export default function MembersTab() {
       <InviteMembersDialog
         open={inviteDialogOpen}
         emails={inviteEmails}
+        emailInput={inviteEmailInput}
         role={inviteRole}
         isPending={inviteMembers.isPending}
-        onEmailsChange={setInviteEmails}
+        onEmailInputChange={setInviteEmailInput}
+        onAddEmail={addCurrentInviteEmail}
+        onRemoveEmail={(email) => setInviteEmails((current) => current.filter((item) => item !== email))}
+        onEmailKeyDown={handleInviteEmailKeyDown}
+        onEmailPaste={handleInviteEmailPaste}
         onRoleChange={setInviteRole}
         onSubmit={submitInvites}
         onClose={() => {
@@ -609,6 +670,25 @@ export default function MembersTab() {
 
           setInviteDialogOpen(false);
         }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(inviteToRevoke)}
+        title="Revoke invitation?"
+        description={inviteToRevoke
+          ? `This will cancel the pending invitation for ${inviteToRevoke.email}.`
+          : ''}
+        warning="They will need a new invite link before they can join this workspace."
+        confirmLabel="Revoke invitation"
+        icon="warning"
+        tone="danger"
+        isPending={revokeInvite.isPending}
+        onConfirm={() => {
+          if (inviteToRevoke) {
+            revokeInvite.mutate(inviteToRevoke);
+          }
+        }}
+        onClose={() => setInviteToRevoke(null)}
       />
 
       <ConfirmDialog

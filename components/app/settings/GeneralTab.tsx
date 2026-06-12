@@ -11,7 +11,7 @@ import { useToast } from '@/lib/toast-context';
 import type { AuthUser, WorkspacePlan, WorkspaceSummary } from '@/lib/api/types';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
-import { ConfirmDialog, Sect, FieldInput } from './_shared';
+import { ConfirmDialog } from './_shared';
 import { getWorkspacePath } from '@/lib/workspace-routing';
 
 const PLAN_LABELS: Record<WorkspacePlan, string> = {
@@ -27,6 +27,9 @@ const PLAN_STYLES: Record<WorkspacePlan, string> = {
   BUSINESS: 'border-[#22c55e]/30 bg-[#22c55e]/10 text-[#86efac]',
   ENTERPRISE: 'border-[#3b82f6]/30 bg-[#3b82f6]/10 text-[#93c5fd]',
 };
+
+const inputClass = 'w-full h-9 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition';
+const textareaClass = 'w-full min-h-[96px] px-3 py-2.5 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition resize-none leading-[1.5]';
 
 export default function GeneralTab() {
   const router = useRouter();
@@ -45,16 +48,17 @@ export default function GeneralTab() {
   const workspaceDescription = workspaceQuery.data?.description ?? '';
   const workspaceLogoUrl = workspaceQuery.data?.logoUrl ?? null;
   const workspacePlan = workspaceQuery.data?.plan;
-  const workspaceInitial = workspaceName.trim().charAt(0).toUpperCase() || 'N';
+  const [editing, setEditing] = useState(false);
   const [draftWsName, setDraftWsName] = useState('');
-  const [hasEditedWsName, setHasEditedWsName] = useState(false);
   const [draftDescription, setDraftDescription] = useState('');
-  const [hasEditedDescription, setHasEditedDescription] = useState(false);
+  const [localWorkspaceName, setLocalWorkspaceName] = useState<string | null>(null);
+  const [localWorkspaceDescription, setLocalWorkspaceDescription] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<'leave' | 'delete' | null>(null);
   const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const wsName = hasEditedWsName ? draftWsName : workspaceName;
-  const wsDescription = hasEditedDescription ? draftDescription : workspaceDescription;
+  const displayWorkspaceName = localWorkspaceName ?? workspaceName;
+  const displayWorkspaceDescription = localWorkspaceDescription ?? workspaceDescription;
+  const workspaceInitial = displayWorkspaceName.trim().charAt(0).toUpperCase() || 'N';
   const showWorkspaceLogo = Boolean(workspaceLogoUrl && failedLogoUrl !== workspaceLogoUrl);
 
   function syncWorkspaceExitState() {
@@ -120,100 +124,148 @@ export default function GeneralTab() {
     },
   });
 
-  function save() { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+  function startEditing() {
+    setDraftWsName(displayWorkspaceName);
+    setDraftDescription(displayWorkspaceDescription);
+    setEditing(true);
+  }
+
+  function cancelEditing() {
+    setDraftWsName(displayWorkspaceName);
+    setDraftDescription(displayWorkspaceDescription);
+    setEditing(false);
+  }
+
+  function save() {
+    const nextName = draftWsName.trim();
+
+    if (!nextName) {
+      toast.warning('Workspace name cannot be empty.');
+      return;
+    }
+
+    setLocalWorkspaceName(nextName);
+    setLocalWorkspaceDescription(draftDescription.trim());
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
 
   return (
     <div>
-      <h2 className="text-[20px] font-semibold tracking-tightest text-ink mb-1">General</h2>
-      <p className="text-[13px] text-sub mb-0">
-        {workspaceQuery.isLoading ? 'Loading workspace details…' : 'Workspace-wide settings.'}
-      </p>
-
       {workspaceQuery.isError && (
-        <div className="mt-4 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-[13px] text-sub">
+        <div className="mb-5 rounded-lg border border-danger/30 bg-danger/5 px-4 py-3 text-[13px] text-sub">
           We couldn&apos;t load the latest workspace details. Showing your current workspace snapshot instead.
         </div>
       )}
 
-      <Sect title="Workspace identity">
-        <div className="space-y-5">
-          <div className="flex items-center gap-4">
-            {showWorkspaceLogo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={workspaceLogoUrl ?? undefined}
-                alt={`${workspaceName} logo`}
-                className="w-14 h-14 rounded-xl object-cover border border-line shrink-0"
-                onError={() => setFailedLogoUrl(workspaceLogoUrl)}
-              />
-            ) : (
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl select-none shrink-0" style={{ letterSpacing: '-0.02em' }}>
-                {workspaceInitial}
-              </div>
-            )}
-            <div>
-              <Button variant="secondary" size="sm">Change icon</Button>
-              <p className="text-[12px] text-muted mt-1.5">SVG or PNG · 256 × 256 recommended</p>
-            </div>
-          </div>
-          <FieldInput
-            label="Workspace name"
-            value={wsName}
-            onChange={e => {
-              if (!hasEditedWsName) {
-                setHasEditedWsName(true);
-              }
-              setDraftWsName(e.target.value);
-            }}
-          />
-          <div>
-            <label className="block text-[13px] font-medium text-ink mb-1.5">Description</label>
-            <textarea
-              value={wsDescription}
-              onChange={e => {
-                if (!hasEditedDescription) {
-                  setHasEditedDescription(true);
-                }
-                setDraftDescription(e.target.value);
-              }}
-              placeholder="What is this workspace for?"
-              className="w-full min-h-[96px] px-3 py-2.5 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition resize-none leading-[1.5]"
+      <div className="flex items-center gap-5 pb-7 border-b border-divider">
+        <div className="relative shrink-0">
+          {showWorkspaceLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={workspaceLogoUrl ?? undefined}
+              alt={`${displayWorkspaceName} logo`}
+              className="w-20 h-20 rounded-2xl object-cover border border-line"
+              onError={() => setFailedLogoUrl(workspaceLogoUrl)}
             />
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-ink mb-1.5">Workspace URL</label>
-            <div className="flex items-center h-10 rounded-md bg-elevated border border-divider overflow-hidden">
-              <span className="pl-3 text-[14px] text-muted">teamflow.io/</span>
-              <span className="text-[14px] text-sub pr-3">{workspaceSlug}</span>
+          ) : (
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-semibold text-2xl select-none" style={{ letterSpacing: '-0.02em' }}>
+              {workspaceInitial}
             </div>
-          </div>
-          <div>
-            <label className="block text-[13px] font-medium text-ink mb-1.5">Plan</label>
-            <div className="flex items-center justify-between gap-3 rounded-md bg-elevated border border-divider px-3 py-2.5">
-              <div className="min-w-0">
-                <div className="text-[14px] text-ink">
-                  {workspacePlan ? PLAN_LABELS[workspacePlan] : workspaceQuery.isLoading ? 'Loading…' : 'Unavailable'}
-                </div>
-                <div className="text-[12px] text-sub mt-0.5">Plan changes are managed in Billing.</div>
-              </div>
-              {workspacePlan && (
-                <span className={`shrink-0 inline-flex items-center px-2.5 py-1 rounded-full border text-[11px] font-medium ${PLAN_STYLES[workspacePlan]}`}>
-                  Current plan
-                </span>
-              )}
-            </div>
-          </div>
+          )}
+          {editing && (
+            <button className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-panel border border-line flex items-center justify-center text-sub hover:text-ink transition shadow-sm">
+              <Icon name="compose" size={12} />
+            </button>
+          )}
         </div>
-      </Sect>
-
-      <div className="pt-2 pb-10 flex items-center gap-3">
-        <Button onClick={save}>
-          {saved ? <><Icon name="check" size={15} /> Saved!</> : 'Save changes'}
-        </Button>
-        {saved && <span className="text-[13px] text-sub anim-fade">Changes saved.</span>}
+        <div className="min-w-0">
+          <div className="text-[20px] font-semibold tracking-tightest text-ink truncate">{displayWorkspaceName}</div>
+          <div className="flex items-center gap-2.5 mt-1 flex-wrap">
+            <span className="text-[13px] text-sub">teamflow.io/{workspaceSlug}</span>
+            {workspacePlan && (
+              <>
+                <span className="text-muted">·</span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${PLAN_STYLES[workspacePlan]}`}>
+                  {PLAN_LABELS[workspacePlan]}
+                </span>
+              </>
+            )}
+          </div>
+          {!editing && (
+            <p className="text-[13px] text-sub mt-2 max-w-[520px] leading-relaxed">
+              {displayWorkspaceDescription || 'No workspace description yet.'}
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="rounded-lg border border-danger/40 p-6 space-y-4" style={{ background: 'rgba(239,68,68,0.04)' }}>
+      <div className="divide-y divide-divider">
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Workspace name</span>
+          {editing ? (
+            <input
+              className={inputClass}
+              value={draftWsName}
+              onChange={(event) => setDraftWsName(event.target.value)}
+              placeholder="Workspace name"
+            />
+          ) : (
+            <span className="text-[14px] text-ink">{displayWorkspaceName}</span>
+          )}
+        </div>
+        <div className="flex items-start gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub pt-2">Description</span>
+          {editing ? (
+            <textarea
+              value={draftDescription}
+              onChange={(event) => setDraftDescription(event.target.value)}
+              placeholder="What is this workspace for?"
+              className={textareaClass}
+            />
+          ) : (
+            <span className="text-[14px] text-ink leading-relaxed">{displayWorkspaceDescription || '—'}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Workspace URL</span>
+          <span className="text-[14px] text-ink">teamflow.io/{workspaceSlug}</span>
+        </div>
+        <div className="flex items-center gap-4 py-4">
+          <span className="w-32 shrink-0 text-[13px] text-sub">Plan</span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="text-[14px] text-ink">
+              {workspacePlan ? PLAN_LABELS[workspacePlan] : workspaceQuery.isLoading ? 'Loading…' : 'Unavailable'}
+            </span>
+            {workspacePlan && (
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${PLAN_STYLES[workspacePlan]}`}>
+                Current
+              </span>
+            )}
+            <span className="text-[12px] text-sub">Manage in Billing.</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end pt-4 gap-3">
+        {editing ? (
+          <>
+            <Button variant="secondary" onClick={cancelEditing} disabled={leaveWorkspace.isPending || deleteWorkspace.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={save}>
+              {saved ? <><Icon name="check" size={15} /> Saved!</> : 'Save changes'}
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" size="sm" onClick={startEditing}>
+            <Icon name="compose" size={13} /> Edit general
+          </Button>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-danger/40 p-6 space-y-4 mt-8" style={{ background: 'rgba(239,68,68,0.04)' }}>
         <div>
           <h3 className="text-[15px] font-semibold text-ink">Danger zone</h3>
           <p className="text-[13px] text-sub mt-0.5">Irreversible actions. Think twice.</p>
