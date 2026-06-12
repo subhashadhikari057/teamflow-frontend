@@ -1,10 +1,38 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
+
 const SESSION_HINT_KEY = 'tf-has-session';
 const OAUTH_WELCOME_KEY = 'oauth_welcome';
 
+const listeners = new Set<() => void>();
+
 function canUseStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function notifyAuthHintListeners() {
+  listeners.forEach((listener) => listener());
+}
+
+function getAuthHintSnapshot() {
+  return hasSessionHint() || hasPendingOauthWelcome();
+}
+
+function subscribeAuthHint(listener: () => void) {
+  listeners.add(listener);
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', listener);
+  }
+
+  return () => {
+    listeners.delete(listener);
+
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', listener);
+    }
+  };
 }
 
 export function hasSessionHint() {
@@ -15,11 +43,13 @@ export function hasSessionHint() {
 export function setSessionHint() {
   if (!canUseStorage()) return;
   window.localStorage.setItem(SESSION_HINT_KEY, '1');
+  notifyAuthHintListeners();
 }
 
 export function clearSessionHint() {
   if (!canUseStorage()) return;
   window.localStorage.removeItem(SESSION_HINT_KEY);
+  notifyAuthHintListeners();
 }
 
 export function hasPendingOauthWelcome() {
@@ -49,4 +79,8 @@ export function getOauthIntent(): OauthIntent | null {
 export function clearOauthIntent() {
   if (!canUseStorage()) return;
   window.localStorage.removeItem(OAUTH_INTENT_KEY);
+}
+
+export function useHasAuthHint() {
+  return useSyncExternalStore(subscribeAuthHint, getAuthHintSnapshot, () => false);
 }

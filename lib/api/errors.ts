@@ -45,9 +45,51 @@ const AUTH_MESSAGES: Record<string, string> = {
   AUTH_OAUTH_STATE_INVALID:        'OAuth session expired. Please try again.',
 };
 
+const WORKSPACE_MESSAGES: Record<string, string> = {
+  WORKSPACES_ACTIVE_MEMBERS_EXIST: 'Remove active members before deleting this workspace.',
+  WORKSPACES_ADMIN_CANNOT_LEAVE:   'Transfer ownership before leaving this workspace.',
+  WORKSPACES_CANNOT_REMOVE_OWNER:  'You cannot remove the workspace owner.',
+  WORKSPACES_CANNOT_UPDATE_SELF:   'You cannot update your own workspace role here.',
+  WORKSPACES_INSUFFICIENT_ROLE:    'You do not have permission to perform this workspace action.',
+  WORKSPACES_INVITE_ALREADY_PROCESSED: 'This invite has already been used.',
+  WORKSPACES_INVITE_EXPIRED:       'This invite has expired.',
+  WORKSPACES_INVITE_NOT_FOUND:     'This invite could not be found.',
+  WORKSPACES_MEMBER_LIMIT_REACHED: 'This workspace has reached its member limit.',
+  WORKSPACES_MEMBER_NOT_FOUND:     'This workspace member could not be found.',
+  WORKSPACES_ONLY_OWNER:           'Only the workspace owner can perform this action.',
+  WORKSPACES_WORKSPACE_NOT_FOUND:  'This workspace could not be found.',
+};
+
 const FALLBACK = 'Something went wrong. Please try again.';
 
-export function getAuthErrorMessage(error: unknown): string {
+function getMappedErrorMessage(error: unknown, messages: Record<string, string>): string {
   const code = getErrorCode(error);
-  return AUTH_MESSAGES[code] ?? FALLBACK;
+
+  if (messages[code]) {
+    return messages[code];
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return FALLBACK;
+}
+
+export function getAuthErrorMessage(error: unknown): string {
+  return getMappedErrorMessage(error, AUTH_MESSAGES);
+}
+
+export function getWorkspaceErrorMessage(error: unknown): string {
+  return getMappedErrorMessage(error, WORKSPACE_MESSAGES);
+}
+
+export function getWorkspaceLeaveErrorMessage(error: unknown): string {
+  const code = getErrorCode(error);
+
+  if (code === 'WORKSPACES_ADMIN_CANNOT_LEAVE' || code === 'WORKSPACES_ONLY_OWNER') {
+    return 'Transfer ownership before leaving this workspace.';
+  }
+
+  return getWorkspaceErrorMessage(error);
 }

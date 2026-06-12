@@ -110,7 +110,7 @@ export default function WorkspacePage({ routeWorkspaceSlug }: WorkspacePageProps
     }
 
     clearOauthIntent();
-    void setCurrentWorkspace.mutateAsync({
+    setCurrentWorkspace.mutate({
       workspaceId: workspacesQuery.data[0].id,
     });
   }, [

@@ -78,6 +78,7 @@ export function RoleBadge({ role }: { role: string }) {
     Owner:  'bg-white text-black border-white',
     Admin:  'bg-elevated text-ink border-line',
     Member: 'bg-elevated text-sub border-divider',
+    Guest:  'bg-transparent text-sub border-line',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${map[role] ?? map.Member}`}>
@@ -91,6 +92,9 @@ export function ConfirmDialog({
   title,
   description,
   warning,
+  confirmationText,
+  confirmationLabel,
+  confirmationPlaceholder,
   confirmLabel,
   cancelLabel = 'Cancel',
   tone = 'danger',
@@ -103,6 +107,9 @@ export function ConfirmDialog({
   title: string;
   description: string;
   warning?: string;
+  confirmationText?: string;
+  confirmationLabel?: React.ReactNode;
+  confirmationPlaceholder?: string;
   confirmLabel: string;
   cancelLabel?: string;
   tone?: 'primary' | 'danger';
@@ -111,7 +118,13 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  const [typedConfirmation, setTypedConfirmation] = useState('');
+
   if (!open) return null;
+
+  const requiresConfirmation = Boolean(confirmationText);
+  const isConfirmationMatched = !requiresConfirmation || typedConfirmation.trim() === confirmationText;
+  const confirmDisabled = isPending || !isConfirmationMatched;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -144,11 +157,28 @@ export function ConfirmDialog({
             <p className="text-[13px] text-ink leading-relaxed">{warning}</p>
           </div>
         )}
+        {requiresConfirmation && (
+          <div>
+            <label className="block text-[13px] font-medium text-ink mb-1.5">
+              {confirmationLabel ?? `Type ${confirmationText} to confirm.`}
+            </label>
+            <input
+              type="text"
+              value={typedConfirmation}
+              onChange={(event) => setTypedConfirmation(event.target.value)}
+              placeholder={confirmationPlaceholder ?? confirmationText}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition"
+            />
+          </div>
+        )}
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onConfirm}
-            disabled={isPending}
+            disabled={confirmDisabled}
             className={`flex-1 h-9 px-4 text-sm font-medium rounded-md transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none ${
               tone === 'danger'
                 ? 'bg-danger text-white hover:bg-[#dc2626]'

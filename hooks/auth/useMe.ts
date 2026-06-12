@@ -3,15 +3,14 @@ import { authApi } from '@/lib/api/auth';
 import type { AuthUser } from '@/lib/api/types';
 import {
   clearSessionHint,
-  hasPendingOauthWelcome,
-  hasSessionHint,
   setSessionHint,
+  useHasAuthHint,
 } from '@/lib/auth-session-hint';
 
 export const ME_KEY = ['me'] as const;
 
 export function useMe() {
-  const enabled = hasSessionHint() || hasPendingOauthWelcome();
+  const enabled = useHasAuthHint();
 
   return useQuery<AuthUser, Error>({
     queryKey: ME_KEY,
@@ -19,9 +18,7 @@ export function useMe() {
       try {
         const user = await authApi.me();
 
-        if (!hasSessionHint()) {
-          setSessionHint();
-        }
+        setSessionHint();
 
         return user;
       } catch (error) {
