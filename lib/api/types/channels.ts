@@ -29,6 +29,10 @@ export interface ChannelMemberSummary {
   joinedAt: string;
 }
 
+export interface ChannelDetail extends ChannelSummary {
+  members?: ChannelMemberSummary[];
+}
+
 export interface CreateChannelPayload {
   name: string;
   description?: string;

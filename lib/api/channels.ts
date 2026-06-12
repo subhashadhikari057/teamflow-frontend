@@ -2,6 +2,7 @@ import { del, get, patch, post } from './client';
 import type {
   ActionResponse,
   AddChannelMemberPayload,
+  ChannelDetail,
   ChannelMemberSummary,
   ChannelSummary,
   CreateChannelPayload,
@@ -16,8 +17,17 @@ export const channelsApi = {
   list: (workspaceId: string) =>
     get<ChannelSummary[]>(`/mobile/workspaces/${workspaceId}/channels`),
 
-  getById: (workspaceId: string, channelId: string) =>
-    get<ChannelSummary>(`/mobile/workspaces/${workspaceId}/channels/${channelId}`),
+  getById: (workspaceId: string, channelId: string, query?: { member?: boolean }) => {
+    const searchParams = new URLSearchParams();
+
+    if (query?.member) {
+      searchParams.set('member', 'true');
+    }
+
+    const search = searchParams.toString();
+
+    return get<ChannelDetail>(`/mobile/workspaces/${workspaceId}/channels/${channelId}${search ? `?${search}` : ''}`);
+  },
 
   update: (workspaceId: string, channelId: string, data: UpdateChannelPayload) =>
     patch<ChannelSummary>(`/mobile/workspaces/${workspaceId}/channels/${channelId}`, data),

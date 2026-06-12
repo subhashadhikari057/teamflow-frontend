@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import Avatar from '@/components/primitives/Avatar';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Icon from '@/components/primitives/Icon';
-import { CHANNELS, USERS, MEMBERS } from '@/lib/data';
-import type { ChannelSummary } from '@/lib/api/types';
+import { CHANNELS, USERS } from '@/lib/data';
+import { channelsApi } from '@/lib/api/channels';
+import type { ChannelDetail, ChannelMemberSummary, ChannelSummary } from '@/lib/api/types';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -13,6 +14,7 @@ interface ActiveView {
 
 interface Props {
   active: ActiveView;
+  workspaceId: string;
   channels: ChannelSummary[];
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
@@ -28,24 +30,88 @@ const PRESENCE_COLOR: Record<string, string> = {
 
 const CHANNEL_TABS = ['About', 'Members', 'Files', 'Pinned'] as const;
 const DM_TABS      = ['Profile', 'Files', 'Pinned'] as const;
+const EMPTY_CHANNEL_MEMBERS: ChannelMemberSummary[] = [];
 
 // ── About tab ────────────────────────────────────────────────────────
 
+function formatChannelCreatedAt(value?: string) {
+  if (!value) {
+    return 'Unknown';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+}
+
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?';
+}
+
+function ChannelMemberAvatar({ member }: { member: ChannelMemberSummary }) {
+  if (member.avatarUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={member.avatarUrl}
+        alt={member.name ?? member.username}
+        className="w-[30px] h-[30px] rounded-lg object-cover shrink-0 border border-line"
+      />
+    );
+  }
+
+  return (
+    <div
+      className="w-[30px] h-[30px] rounded-lg shrink-0 flex items-center justify-center text-[12px] font-semibold text-white select-none"
+      style={{ background: '#3b82f6' }}
+    >
+      {getInitials(member.name ?? member.username)}
+    </div>
+  );
+}
+
 function AboutTab({
-  description,
-  topic,
+  channel,
+  creatorLabel,
   memberCount,
 }: {
-  description: string;
-  topic: string;
+  channel: ChannelSummary;
+  creatorLabel: string;
   memberCount: number;
 }) {
+  const description = channel.description?.trim() || 'No description set';
+  const topic = channel.topic?.trim() || 'No topic set';
+  const privacyLabel = channel.type === 'PRIVATE' ? 'Private' : 'Public';
+  const postingLabel = channel.isReadOnly ? 'Read only' : 'Open to members';
+
   return (
     <div className="p-4 space-y-5">
+      <div className="flex flex-wrap gap-2">
+        <ChannelMetaBadge icon={channel.type === 'PRIVATE' ? 'lock' : 'globe'} label={privacyLabel} />
+        {channel.isGeneral && <ChannelMetaBadge icon="hash" label="General" />}
+        {channel.isReadOnly && <ChannelMetaBadge icon="info" label="Read only" />}
+        {channel.isArchived && <ChannelMetaBadge icon="warning" label="Archived" />}
+      </div>
+
       {/* Description */}
       <div>
         <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Description</div>
-        <p className="text-[13px] text-sub leading-[1.65]">{description}</p>
+        <p className={`text-[13px] leading-[1.65] ${description === 'No description set' ? 'text-muted italic' : 'text-sub'}`}>
+          {description}
+        </p>
       </div>
 
       {/* Topic */}
@@ -57,22 +123,10 @@ function AboutTab({
       {/* Meta */}
       <div className="space-y-2.5">
         <MetaRow icon="users" label="Members"  value={String(memberCount)} />
-        <MetaRow icon="hash"  label="Created"  value="Jan 14, 2024" />
-        <MetaRow icon="at"    label="Created by" value="Ashim Shrestha" />
-      </div>
-
-      {/* Notification override */}
-      <div>
-        <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Notifications</div>
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] text-sub">Override for this channel</span>
-          <select className="text-[12px] text-ink bg-elevated border border-line rounded-md px-2 py-1 outline-none cursor-pointer">
-            <option>Default</option>
-            <option>All messages</option>
-            <option>Mentions only</option>
-            <option>Nothing</option>
-          </select>
-        </div>
+        <MetaRow icon={channel.type === 'PRIVATE' ? 'lock' : 'globe'} label="Privacy" value={privacyLabel} />
+        <MetaRow icon="compose" label="Posting" value={postingLabel} />
+        <MetaRow icon="hash" label="Created" value={formatChannelCreatedAt(channel.createdAt)} />
+        <MetaRow icon="at" label="Created by" value={creatorLabel} />
       </div>
     </div>
   );
@@ -80,11 +134,20 @@ function AboutTab({
 
 // ── Members tab ──────────────────────────────────────────────────────
 
-function MembersTab({ onOpenProfile }: { onOpenProfile: (id: string) => void }) {
+function MembersTab({
+  members,
+  isLoading,
+  isError,
+  onOpenProfile,
+}: {
+  members: ChannelMemberSummary[];
+  isLoading: boolean;
+  isError: boolean;
+  onOpenProfile: (id: string) => void;
+}) {
   const [query, setQuery] = useState('');
-  const members = MEMBERS.map((m) => ({ ...USERS[m.userId], role: m.role })).filter(Boolean);
-  const filtered = members.filter((u) =>
-    u.name.toLowerCase().includes(query.toLowerCase())
+  const filtered = members.filter((member) =>
+    `${member.name ?? ''} ${member.username}`.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
@@ -101,22 +164,36 @@ function MembersTab({ onOpenProfile }: { onOpenProfile: (id: string) => void }) 
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-2">
+        {isLoading ? (
+          <div className="px-2 py-10 text-center text-[13px] text-sub">Loading members…</div>
+        ) : isError ? (
+          <div className="px-2 py-10 text-center text-[13px] text-sub">
+            We couldn&apos;t load this channel&apos;s members right now.
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-2 py-10 text-center text-[13px] text-sub">
+            {members.length === 0 ? 'No members found for this channel.' : 'No members match your search.'}
+          </div>
+        ) : (
+          <>
         <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold px-2 py-1.5">
           {filtered.length} member{filtered.length !== 1 ? 's' : ''}
         </div>
-        {filtered.map((u) => (
+        {filtered.map((member) => (
           <button
-            key={u.id}
-            onClick={() => onOpenProfile(u.id)}
+            key={member.id}
+            onClick={() => onOpenProfile(member.userId)}
             className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-elevated transition text-left"
           >
-            <Avatar userId={u.id} size={30} presence />
+            <ChannelMemberAvatar member={member} />
             <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-medium text-ink truncate">{u.name}</div>
-              <div className="text-[11px] text-muted truncate capitalize">{u.presence} · {u.role}</div>
+              <div className="text-[13px] font-medium text-ink truncate">{member.name ?? member.username}</div>
+              <div className="text-[11px] text-muted truncate">@{member.username} · {member.role}</div>
             </div>
           </button>
         ))}
+          </>
+        )}
       </div>
     </div>
   );
@@ -214,6 +291,15 @@ function MetaRow({ icon, label, value }: { icon: string; label: string; value: s
   );
 }
 
+function ChannelMetaBadge({ icon, label }: { icon: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium bg-elevated border border-line text-sub">
+      <Icon name={icon} size={12} />
+      {label}
+    </span>
+  );
+}
+
 function Empty({ icon, text, sub }: { icon: string; text: string; sub?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-14 px-6 gap-2 text-center">
@@ -226,14 +312,29 @@ function Empty({ icon, text, sub }: { icon: string; text: string; sub?: string }
 
 // ── Root ─────────────────────────────────────────────────────────────
 
-export default function ChannelInfoPanel({ active, channels, onClose, onOpenProfile }: Props) {
+export default function ChannelInfoPanel({ active, workspaceId, channels, onClose, onOpenProfile }: Props) {
   const isDm = active.type === 'dm';
   const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
   const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
-  const channelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
-  const channelDescription = apiChannel?.description?.trim() || fallbackChannel?.desc || 'No description set';
-  const channelTopic = apiChannel?.topic?.trim() || 'No topic set';
-  const channelMemberCount = apiChannel?.memberCount ?? fallbackChannel?.members ?? 0;
+  const channelDetailQuery = useQuery({
+    queryKey: ['channel', workspaceId, active.id],
+    queryFn: () => channelsApi.getById(workspaceId, active.id, { member: true }),
+    enabled: !isDm,
+    placeholderData: apiChannel ?? undefined,
+    staleTime: 60_000,
+  });
+  const channel = (channelDetailQuery.data ?? apiChannel) as ChannelDetail | ChannelSummary | null;
+  const channelName = channel?.name ?? fallbackChannel?.name ?? active.id;
+  const channelMembers = 'members' in (channel ?? {}) && Array.isArray(channel?.members)
+    ? channel.members
+    : EMPTY_CHANNEL_MEMBERS;
+  const creatorMember = useMemo(
+    () => channelMembers.find((member) => member.userId === channel?.createdBy),
+    [channel?.createdBy, channelMembers],
+  );
+  const creatorLabel = creatorMember?.name
+    ?? (creatorMember?.username ? `@${creatorMember.username}` : channel?.createdBy || 'Unknown');
+  const channelMemberCount = channelMembers.length || channel?.memberCount || fallbackChannel?.members || 0;
   const dmUser  = isDm ? USERS[active.id] : null;
 
   const tabs = isDm ? DM_TABS : CHANNEL_TABS;
@@ -282,14 +383,27 @@ export default function ChannelInfoPanel({ active, channels, onClose, onOpenProf
 
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto">
-        {!isDm && tab === 'About'   && (
-          <AboutTab
-            description={channelDescription}
-            topic={channelTopic}
-            memberCount={channelMemberCount}
+        {!isDm && tab === 'About' && (
+          channel ? (
+            <AboutTab
+              channel={channel}
+              creatorLabel={creatorLabel}
+              memberCount={channelMemberCount}
+            />
+          ) : (
+            <div className="px-4 py-10 text-center text-[13px] text-sub">
+              We couldn&apos;t load this channel&apos;s details right now.
+            </div>
+          )
+        )}
+        {!isDm && tab === 'Members' && (
+          <MembersTab
+            members={channelMembers}
+            isLoading={channelDetailQuery.isLoading}
+            isError={channelDetailQuery.isError}
+            onOpenProfile={onOpenProfile}
           />
         )}
-        {!isDm && tab === 'Members' && <MembersTab onOpenProfile={onOpenProfile} />}
         {tab === 'Files'            && <FilesTab />}
         {tab === 'Pinned'           && <PinnedTab />}
         {isDm  && tab === 'Profile' && <DmProfileTab userId={active.id} onOpenProfile={onOpenProfile} />}

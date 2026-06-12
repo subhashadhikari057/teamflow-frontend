@@ -329,6 +329,7 @@ export default function WorkspacePage({
 
         <ChannelView
           active={effectiveActive}
+          workspaceId={me.currentWorkspace.id}
           channels={workspaceChannels}
           onToggleSidebar={() => setCollapsed((c) => !c)}
           openSearch={() => setOv((o) => ({ ...o, search: true }))}
@@ -342,6 +343,7 @@ export default function WorkspacePage({
         {ov.info && (
           <ChannelInfoPanel
             active={effectiveActive}
+            workspaceId={me.currentWorkspace.id}
             channels={workspaceChannels}
             onClose={() => setOv((o) => ({ ...o, info: false }))}
             onOpenProfile={setProfileUser}

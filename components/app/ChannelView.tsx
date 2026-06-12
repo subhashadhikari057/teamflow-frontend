@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
@@ -8,7 +9,8 @@ import Badge from '@/components/primitives/Badge';
 import MessageBody from './MessageBody';
 import Composer from './Composer';
 import { CHANNELS, ENG_MESSAGES, USERS } from '@/lib/data';
-import type { ChannelSummary } from '@/lib/api/types';
+import { channelsApi } from '@/lib/api/channels';
+import type { ChannelMemberSummary, ChannelSummary } from '@/lib/api/types';
 import type { Message } from '@/lib/types';
 import { useAppearance } from '@/lib/appearance-context';
 
@@ -19,6 +21,7 @@ interface ActiveView {
 
 interface ChannelViewProps {
   active: ActiveView;
+  workspaceId: string;
   channels: ChannelSummary[];
   onToggleSidebar: () => void;
   openSearch: () => void;
@@ -165,51 +168,103 @@ function MessageRow({
   );
 }
 
-export default function ChannelView({
-  active, channels, onToggleSidebar, openSearch, openCall, openThread, openProfile, openInfo, infoOpen,
-}: ChannelViewProps) {
-  const { density } = useAppearance();
-  const isDm = active.type === 'dm';
-  const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
-  const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
-  const channelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
-  const channelDescription = apiChannel?.description?.trim() || fallbackChannel?.desc || 'No description yet.';
-  const channelMemberCount = apiChannel?.memberCount ?? fallbackChannel?.members ?? 0;
-  const channelIntro = channelDescription === 'No description yet.'
-    ? 'This channel is ready for your team.'
-    : `${channelDescription}${/[.!?]$/.test(channelDescription) ? '' : '.'} This is the very beginning of the channel.`;
-  const dmUser = isDm ? USERS[active.id] : null;
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?';
+}
 
-  const [messages, setMessages] = useState<Message[]>(ENG_MESSAGES);
+function ChannelHeaderAvatar({ member }: { member: ChannelMemberSummary }) {
+  if (member.avatarUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={member.avatarUrl}
+        alt={member.name ?? member.username}
+        className="w-6 h-6 rounded-md object-cover border border-bg shrink-0"
+      />
+    );
+  }
+
+  return (
+    <div
+      className="w-6 h-6 rounded-md shrink-0 flex items-center justify-center text-[10px] font-semibold text-white select-none border border-bg"
+      style={{ background: '#3b82f6' }}
+    >
+      {getInitials(member.name ?? member.username)}
+    </div>
+  );
+}
+
+function getSeedMessages({
+  activeId,
+  channelName,
+  isDm,
+}: {
+  activeId: string;
+  channelName: string;
+  isDm: boolean;
+}) {
+  if (isDm) {
+    return [
+      {
+        id: 'd1',
+        userId: activeId,
+        time: '8:40 AM',
+        reactions: [],
+        body: `Hey! Did you get a chance to look at the ${activeId === 'priya' ? 'design specs' : 'PR'}?`,
+      },
+      {
+        id: 'd2',
+        userId: 'ashim',
+        time: '8:42 AM',
+        reactions: [],
+        body: 'Just reviewing now — looks great. Leaving a couple comments.',
+      },
+    ];
+  }
+
+  if (channelName === 'engineering') {
+    return ENG_MESSAGES;
+  }
+
+  return [
+    {
+      id: 'g1',
+      userId: 'sarah',
+      time: '8:15 AM',
+      reactions: [],
+      body: `Welcome to **#${channelName}** 👋 — this is the start of the channel.`,
+    },
+  ];
+}
+
+function ConversationPane({
+  channelIntro,
+  channelName,
+  composerLabel,
+  isDm,
+  openProfile,
+  openThread,
+  seedMessages,
+  showTyping,
+}: {
+  channelIntro: string;
+  channelName: string;
+  composerLabel: string;
+  isDm: boolean;
+  openProfile: (userId: string) => void;
+  openThread: (id: string) => void;
+  seedMessages: Message[];
+  showTyping: boolean;
+}) {
+  const { density } = useAppearance();
+  const [messages, setMessages] = useState<Message[]>(seedMessages);
   const [editing, setEditing] = useState<{ body: string; flag?: boolean } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const nextChannelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
-
-    if (isDm) {
-      setMessages([
-        {
-          id: 'd1', userId: active.id, time: '8:40 AM', reactions: [],
-          body: `Hey! Did you get a chance to look at the ${active.id === 'priya' ? 'design specs' : 'PR'}?`,
-        },
-        {
-          id: 'd2', userId: 'ashim', time: '8:42 AM', reactions: [],
-          body: 'Just reviewing now — looks great. Leaving a couple comments.',
-        },
-      ]);
-    } else if (nextChannelName === 'engineering') {
-      setMessages(ENG_MESSAGES);
-    } else {
-      setMessages([
-        {
-          id: 'g1', userId: 'sarah', time: '8:15 AM', reactions: [],
-          body: `Welcome to **#${nextChannelName}** 👋 — this is the start of the channel.`,
-        },
-      ]);
-    }
-    setEditing(null);
-  }, [active.id, active.type, apiChannel?.name, fallbackChannel?.name, isDm]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -223,11 +278,84 @@ export default function ChannelView({
         const realIdx = prev.length - 1 - idx;
         return prev.map((m, i) => (i === realIdx ? { ...m, body: text, edited: true } : m));
       });
-    } else {
-      const id = `new-${messages.length}`;
-      setMessages((prev) => [...prev, { id, userId: 'ashim', time: 'now', body: text, reactions: [] }]);
+      return;
     }
+
+    setMessages((prev) => [
+      ...prev,
+      { id: `new-${prev.length}`, userId: 'ashim', time: 'now', body: text, reactions: [] },
+    ]);
   };
+
+  return (
+    <>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
+        {!isDm && (
+          <div className="px-5 pb-4 mb-2">
+            <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
+              <Icon name="hash" size={22} />
+            </div>
+            <h2 className="text-[22px] font-bold tracking-tightest text-ink">
+              Welcome to #{channelName}
+            </h2>
+            <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
+          </div>
+        )}
+
+        <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
+          {messages.map((m) => (
+            <MessageRow key={m.id} m={m} onOpenThread={openThread} onOpenProfile={openProfile} />
+          ))}
+        </div>
+
+        {showTyping && (
+          <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
+            <Avatar userId="sarah" size={22} presence={false} />
+            <span>Sarah is typing<span>.</span><span>.</span><span>.</span></span>
+          </div>
+        )}
+      </div>
+
+      <Composer
+        channelName={composerLabel}
+        onSend={handleSend}
+        editing={editing}
+        setEditing={setEditing}
+      />
+    </>
+  );
+}
+
+export default function ChannelView({
+  active, workspaceId, channels, onToggleSidebar, openSearch, openCall, openThread, openProfile, openInfo, infoOpen,
+}: ChannelViewProps) {
+  const isDm = active.type === 'dm';
+  const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
+  const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
+  const channelName = apiChannel?.name ?? fallbackChannel?.name ?? active.id;
+  const channelDescription = apiChannel?.description?.trim() || fallbackChannel?.desc || 'No description yet.';
+  const channelMemberCount = apiChannel?.memberCount ?? fallbackChannel?.members ?? 0;
+  const channelIntro = channelDescription === 'No description yet.'
+    ? 'This channel is ready for your team.'
+    : `${channelDescription}${/[.!?]$/.test(channelDescription) ? '' : '.'} This is the very beginning of the channel.`;
+  const channelMembersQuery = useQuery({
+    queryKey: ['channel-members', workspaceId, apiChannel?.id],
+    queryFn: () => channelsApi.listMembers(workspaceId, apiChannel!.id),
+    enabled: !isDm && Boolean(apiChannel?.id),
+    staleTime: 60_000,
+  });
+  const channelMembers = channelMembersQuery.data ?? [];
+  const headerMembers = channelMembers.slice(0, 4);
+  const headerMemberCount = channelMembers.length || channelMemberCount;
+  const dmUser = isDm ? USERS[active.id] : null;
+  const conversationKey = isDm
+    ? `dm:${active.id}`
+    : `channel:${apiChannel?.id ?? fallbackChannel?.id ?? active.id}`;
+  const seedMessages = getSeedMessages({
+    activeId: active.id,
+    channelName,
+    isDm,
+  });
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-bg">
@@ -274,11 +402,11 @@ export default function ChannelView({
           {!isDm && (
             <div className="hidden sm:flex items-center gap-2 mr-1">
               <div className="flex -space-x-2">
-                {['sarah', 'marcus', 'priya', 'devon'].map((id) => (
-                  <Avatar key={id} userId={id} size={24} presence={false} ring />
+                {headerMembers.map((member) => (
+                  <ChannelHeaderAvatar key={member.id} member={member} />
                 ))}
               </div>
-              <span className="text-[12px] text-sub">{channelMemberCount}</span>
+              <span className="text-[12px] text-sub">{headerMemberCount}</span>
             </div>
           )}
 
@@ -324,39 +452,16 @@ export default function ChannelView({
         </div>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
-        {!isDm && (
-          <div className="px-5 pb-4 mb-2">
-            <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
-              <Icon name="hash" size={22} />
-            </div>
-            <h2 className="text-[22px] font-bold tracking-tightest text-ink">
-              Welcome to #{channelName}
-            </h2>
-            <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
-          </div>
-        )}
-
-        <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
-          {messages.map((m) => (
-            <MessageRow key={m.id} m={m} onOpenThread={openThread} onOpenProfile={openProfile} />
-          ))}
-        </div>
-
-        {!isDm && channelName === 'engineering' && (
-          <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
-            <Avatar userId="sarah" size={22} presence={false} />
-            <span>Sarah is typing<span>.</span><span>.</span><span>.</span></span>
-          </div>
-        )}
-      </div>
-
-      <Composer
-        channelName={isDm ? dmUser!.name : `#${channelName}`}
-        onSend={handleSend}
-        editing={editing}
-        setEditing={setEditing}
+      <ConversationPane
+        key={conversationKey}
+        channelIntro={channelIntro}
+        channelName={channelName}
+        composerLabel={isDm ? dmUser!.name : `#${channelName}`}
+        isDm={isDm}
+        openProfile={openProfile}
+        openThread={openThread}
+        seedMessages={seedMessages}
+        showTyping={!isDm && channelName === 'engineering'}
       />
     </div>
   );
