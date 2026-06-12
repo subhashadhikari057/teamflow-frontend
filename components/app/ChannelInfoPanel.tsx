@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Icon from '@/components/primitives/Icon';
+import EditChannelModal from '@/components/app/EditChannelModal';
 import { CHANNELS, USERS } from '@/lib/data';
 import { channelsApi } from '@/lib/api/channels';
 import type { ChannelDetail, ChannelMemberSummary, ChannelSummary } from '@/lib/api/types';
@@ -87,23 +88,39 @@ function AboutTab({
   channel,
   creatorLabel,
   memberCount,
+  onEdit,
 }: {
   channel: ChannelSummary;
   creatorLabel: string;
   memberCount: number;
+  onEdit: () => void;
 }) {
   const description = channel.description?.trim() || 'No description set';
   const topic = channel.topic?.trim() || 'No topic set';
   const privacyLabel = channel.type === 'PRIVATE' ? 'Private' : 'Public';
   const postingLabel = channel.isReadOnly ? 'Read only' : 'Open to members';
+  const canEdit = !channel.isGeneral;
 
   return (
     <div className="p-4 space-y-5">
-      <div className="flex flex-wrap gap-2">
-        <ChannelMetaBadge icon={channel.type === 'PRIVATE' ? 'lock' : 'globe'} label={privacyLabel} />
-        {channel.isGeneral && <ChannelMetaBadge icon="hash" label="General" />}
-        {channel.isReadOnly && <ChannelMetaBadge icon="info" label="Read only" />}
-        {channel.isArchived && <ChannelMetaBadge icon="warning" label="Archived" />}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap gap-2 min-w-0">
+          <ChannelMetaBadge icon={channel.type === 'PRIVATE' ? 'lock' : 'globe'} label={privacyLabel} />
+          {channel.isGeneral && <ChannelMetaBadge icon="hash" label="General" />}
+          {channel.isReadOnly && <ChannelMetaBadge icon="info" label="Read only" />}
+          {channel.isArchived && <ChannelMetaBadge icon="warning" label="Archived" />}
+        </div>
+        {canEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="w-8 h-8 rounded-md shrink-0 flex items-center justify-center text-muted hover:text-ink hover:bg-elevated transition"
+            aria-label="Edit channel"
+            title="Edit channel"
+          >
+            <Icon name="compose" size={13} />
+          </button>
+        )}
       </div>
 
       {/* Description */}
@@ -339,76 +356,87 @@ export default function ChannelInfoPanel({ active, workspaceId, channels, onClos
 
   const tabs = isDm ? DM_TABS : CHANNEL_TABS;
   const [tab, setTab] = useState<string>(tabs[0]);
+  const [editModalOpen, setEditModalOpen] = useState(false);
 
   return (
-    <aside className="w-[280px] shrink-0 border-l border-divider bg-bg flex flex-col anim-slide overflow-hidden">
+    <>
+      <aside className="w-[280px] shrink-0 border-l border-divider bg-bg flex flex-col anim-slide overflow-hidden">
 
-      {/* Header */}
-      <div className="h-14 border-b border-divider flex items-center justify-between px-4 shrink-0">
-        <div className="min-w-0">
-          {isDm ? (
-            <div className="text-[15px] font-semibold text-ink tracking-tightest truncate">{dmUser!.name}</div>
-          ) : (
-            <div className="flex items-center gap-1 min-w-0">
-              <span className="text-muted text-[15px]">#</span>
-              <span className="text-[15px] font-semibold text-ink tracking-tightest truncate">{channelName}</span>
-            </div>
-          )}
-        </div>
-        <button
-          onClick={onClose}
-          className="w-8 h-8 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition shrink-0"
-        >
-          <Icon name="x" size={16} />
-        </button>
-      </div>
-
-      {/* Tab bar */}
-      <div className="flex border-b border-divider px-2 shrink-0">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`relative px-3 py-2.5 text-[13px] font-medium transition whitespace-nowrap ${
-              tab === t ? 'text-ink' : 'text-muted hover:text-sub'
-            }`}
-          >
-            {t}
-            {tab === t && (
-              <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-white rounded-full" />
+        {/* Header */}
+        <div className="h-14 border-b border-divider flex items-center justify-between px-4 shrink-0">
+          <div className="min-w-0">
+            {isDm ? (
+              <div className="text-[15px] font-semibold text-ink tracking-tightest truncate">{dmUser!.name}</div>
+            ) : (
+              <div className="flex items-center gap-1 min-w-0">
+                <span className="text-muted text-[15px]">#</span>
+                <span className="text-[15px] font-semibold text-ink tracking-tightest truncate">{channelName}</span>
+              </div>
             )}
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-md text-sub hover:text-ink hover:bg-elevated flex items-center justify-center transition shrink-0"
+          >
+            <Icon name="x" size={16} />
           </button>
-        ))}
-      </div>
+        </div>
 
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto">
-        {!isDm && tab === 'About' && (
-          channel ? (
-            <AboutTab
-              channel={channel}
-              creatorLabel={creatorLabel}
-              memberCount={channelMemberCount}
+        {/* Tab bar */}
+        <div className="flex border-b border-divider px-2 shrink-0">
+          {tabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`relative px-3 py-2.5 text-[13px] font-medium transition whitespace-nowrap ${
+                tab === t ? 'text-ink' : 'text-muted hover:text-sub'
+              }`}
+            >
+              {t}
+              {tab === t && (
+                <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-white rounded-full" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto">
+          {!isDm && tab === 'About' && (
+            channel ? (
+              <AboutTab
+                channel={channel}
+                creatorLabel={creatorLabel}
+                memberCount={channelMemberCount}
+                onEdit={() => setEditModalOpen(true)}
+              />
+            ) : (
+              <div className="px-4 py-10 text-center text-[13px] text-sub">
+                We couldn&apos;t load this channel&apos;s details right now.
+              </div>
+            )
+          )}
+          {!isDm && tab === 'Members' && (
+            <MembersTab
+              members={channelMembers}
+              isLoading={channelDetailQuery.isLoading}
+              isError={channelDetailQuery.isError}
+              onOpenProfile={onOpenProfile}
             />
-          ) : (
-            <div className="px-4 py-10 text-center text-[13px] text-sub">
-              We couldn&apos;t load this channel&apos;s details right now.
-            </div>
-          )
-        )}
-        {!isDm && tab === 'Members' && (
-          <MembersTab
-            members={channelMembers}
-            isLoading={channelDetailQuery.isLoading}
-            isError={channelDetailQuery.isError}
-            onOpenProfile={onOpenProfile}
-          />
-        )}
-        {tab === 'Files'            && <FilesTab />}
-        {tab === 'Pinned'           && <PinnedTab />}
-        {isDm  && tab === 'Profile' && <DmProfileTab userId={active.id} onOpenProfile={onOpenProfile} />}
-      </div>
+          )}
+          {tab === 'Files'            && <FilesTab />}
+          {tab === 'Pinned'           && <PinnedTab />}
+          {isDm  && tab === 'Profile' && <DmProfileTab userId={active.id} onOpenProfile={onOpenProfile} />}
+        </div>
+      </aside>
 
-    </aside>
+      {!isDm && editModalOpen && channel && !channel.isGeneral && (
+        <EditChannelModal
+          workspaceId={workspaceId}
+          channel={channel}
+          onClose={() => setEditModalOpen(false)}
+        />
+      )}
+    </>
   );
 }
