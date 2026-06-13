@@ -60,6 +60,24 @@ const WORKSPACE_MESSAGES: Record<string, string> = {
   WORKSPACES_WORKSPACE_NOT_FOUND:  'This workspace could not be found.',
 };
 
+const CHANNEL_MESSAGES: Record<string, string> = {
+  CHANNELS_ALREADY_CHANNEL_MEMBER:      'This person is already a member of the channel.',
+  CHANNELS_CANNOT_DELETE_GENERAL:       'The general channel cannot be deleted.',
+  CHANNELS_CANNOT_JOIN_ARCHIVED:        'You cannot join an archived channel.',
+  CHANNELS_CANNOT_JOIN_PRIVATE:         'You cannot join this private channel without an invite.',
+  CHANNELS_CANNOT_LEAVE_GENERAL:        'You cannot leave the general channel.',
+  CHANNELS_CANNOT_REMOVE_FROM_GENERAL:  'Members cannot be removed from the general channel.',
+  CHANNELS_CHANNEL_MEMBER_NOT_FOUND:    'This channel member could not be found.',
+  CHANNELS_CHANNEL_NAME_INVALID:        'Enter a valid channel name.',
+  CHANNELS_CHANNEL_NAME_RESERVED:       'This channel name is reserved.',
+  CHANNELS_CHANNEL_NOT_FOUND:           'This channel could not be found.',
+  CHANNELS_CHANNEL_PRIVATE_ACCESS_DENIED: 'You do not have access to this private channel.',
+  CHANNELS_DUPLICATE_CHANNEL_NAME:      'A channel with this name already exists in the workspace.',
+  CHANNELS_GENERAL_CHANNEL_RENAME_FORBIDDEN: 'The general channel name cannot be changed.',
+  CHANNELS_PRIVATE_MEMBER_ADD_ONLY:     'Members can only be added directly to private channels.',
+  CHANNELS_USER_NOT_WORKSPACE_MEMBER:   'This person is not a member of the workspace.',
+};
+
 const FALLBACK = 'Something went wrong. Please try again.';
 
 function getMappedErrorMessage(error: unknown, messages: Record<string, string>): string {
@@ -82,6 +100,10 @@ export function getAuthErrorMessage(error: unknown): string {
 
 export function getWorkspaceErrorMessage(error: unknown): string {
   return getMappedErrorMessage(error, WORKSPACE_MESSAGES);
+}
+
+export function getChannelErrorMessage(error: unknown): string {
+  return getMappedErrorMessage(error, CHANNEL_MESSAGES);
 }
 
 export function getWorkspaceLeaveErrorMessage(error: unknown): string {
