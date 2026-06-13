@@ -19,6 +19,7 @@ interface Props {
   channels: ChannelSummary[];
   onClose: () => void;
   onOpenProfile: (userId: string) => void;
+  onChannelDeleted: (nextChannelId: string | null) => void;
 }
 
 const PRESENCE_COLOR: Record<string, string> = {
@@ -329,7 +330,14 @@ function Empty({ icon, text, sub }: { icon: string; text: string; sub?: string }
 
 // ── Root ─────────────────────────────────────────────────────────────
 
-export default function ChannelInfoPanel({ active, workspaceId, channels, onClose, onOpenProfile }: Props) {
+export default function ChannelInfoPanel({
+  active,
+  workspaceId,
+  channels,
+  onClose,
+  onOpenProfile,
+  onChannelDeleted,
+}: Props) {
   const isDm = active.type === 'dm';
   const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
   const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
@@ -350,7 +358,9 @@ export default function ChannelInfoPanel({ active, workspaceId, channels, onClos
     () => channelMembers.find((member) => member.userId === channel?.createdBy),
     [channel?.createdBy, channelMembers],
   );
-  const creatorLabel = creatorMember?.name
+  const creatorLabel = channelDetail?.creator?.name
+    ?? (channelDetail?.creator?.username ? `@${channelDetail.creator.username}` : null)
+    ?? creatorMember?.name
     ?? (creatorMember?.username ? `@${creatorMember.username}` : channel?.createdBy || 'Unknown');
   const channelMemberCount = channelMembers.length || channel?.memberCount || fallbackChannel?.members || 0;
   const dmUser  = isDm ? USERS[active.id] : null;
@@ -436,6 +446,11 @@ export default function ChannelInfoPanel({ active, workspaceId, channels, onClos
           workspaceId={workspaceId}
           channel={channel}
           onClose={() => setEditModalOpen(false)}
+          onDeleted={(nextChannelId) => {
+            setEditModalOpen(false);
+            onClose();
+            onChannelDeleted(nextChannelId);
+          }}
         />
       )}
     </>

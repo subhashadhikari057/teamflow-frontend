@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import { channelsApi } from '@/lib/api/channels';
+import { getChannelErrorMessage } from '@/lib/api/errors';
 import { useToast } from '@/lib/toast-context';
 import type { ChannelSummary, ChannelType } from '@/lib/api/types';
 
@@ -59,7 +60,7 @@ export default function CreateChannelModal({
       onClose();
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to create channel.');
+      toast.error(getChannelErrorMessage(error));
     },
   });
 

@@ -1,4 +1,5 @@
 import type { GlobalRole } from './common';
+import type { WorkspaceRole } from './workspaces';
 
 export type UserStatus =
   | 'ONLINE'
@@ -30,6 +31,7 @@ export interface AuthUser {
     id: string;
     slug: string;
     name: string;
+    role: WorkspaceRole;
   } | null;
 }
 

@@ -358,6 +358,13 @@ export default function WorkspacePage({
             channels={workspaceChannels}
             onClose={() => setOv((o) => ({ ...o, info: false }))}
             onOpenProfile={setProfileUser}
+            onChannelDeleted={(nextChannelId) => {
+              setOv((o) => ({ ...o, info: false }));
+              setThreadId(null);
+              if (nextChannelId) {
+                setActive({ type: 'channel', id: nextChannelId });
+              }
+            }}
           />
         )}
 

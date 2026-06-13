@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Avatar from '@/components/primitives/Avatar';
+import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
 import { DMS, USERS } from '@/lib/data';
@@ -111,6 +112,114 @@ function WorkspaceAvatar({
   );
 }
 
+function CreateWorkspaceModal({
+  open,
+  isPending,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  isPending: boolean;
+  onClose: () => void;
+  onSubmit: (payload: { name: string; description?: string }) => void;
+}) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+
+  if (!open) {
+    return null;
+  }
+
+  function resetAndClose() {
+    setName('');
+    setDescription('');
+    onClose();
+  }
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onSubmit({
+      name: name.trim(),
+      description: description.trim() || undefined,
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !isPending) {
+          resetAndClose();
+        }
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-md rounded-2xl border border-line bg-panel shadow-2xl overflow-hidden anim-scale"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 px-6 pt-6">
+          <div>
+            <div className="w-10 h-10 rounded-xl border border-line bg-elevated flex items-center justify-center mb-3 text-sub">
+              <Icon name="plus" size={18} />
+            </div>
+            <h2 className="text-[17px] font-semibold text-ink">Create workspace</h2>
+            <p className="text-[13px] text-sub mt-1">
+              Start a new workspace and switch into it right away.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={resetAndClose}
+            disabled={isPending}
+            className="w-8 h-8 rounded-md text-muted hover:text-ink hover:bg-elevated transition disabled:opacity-40"
+            aria-label="Close create workspace modal"
+          >
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-[13px] font-medium text-ink mb-2">Workspace name</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Acme Corp"
+              maxLength={80}
+              className="w-full h-11 rounded-md border border-line bg-elevated px-3 text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-medium text-ink mb-2">Description</label>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="What is this workspace for?"
+              maxLength={240}
+              className="w-full min-h-[104px] rounded-md border border-line bg-elevated px-3 py-2.5 text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition resize-none"
+            />
+            <div className="flex justify-end mt-2">
+              <p className="text-[12px] text-muted">{description.length}/240</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-divider px-6 py-4 flex items-center justify-end gap-3">
+          <Button type="button" variant="secondary" onClick={resetAndClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isPending || !name.trim()}>
+            {isPending ? 'Creating…' : 'Create workspace'}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function Sidebar({
   collapsed, active, channels, channelsLoading, onSelect, openAddChannel, openSearch, openSettings, openShortcuts, openProfile, openCompose,
 }: SidebarProps) {
@@ -136,6 +245,7 @@ export default function Sidebar({
   const [chanOpen, setChanOpen] = useState(true);
   const [dmOpen, setDmOpen] = useState(true);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [createWorkspaceOpen, setCreateWorkspaceOpen] = useState(false);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const switchWorkspace = useMutation({
     mutationFn: (workspaceId: string) => authApi.setCurrentWorkspace({ workspaceId }),
@@ -150,6 +260,31 @@ export default function Sidebar({
 
       setWorkspaceMenuOpen(false);
       router.replace(getWorkspacePath(user.currentWorkspace?.slug ?? nextWorkspace?.slug));
+    },
+    onError: (error) => {
+      toast.error(getWorkspaceErrorMessage(error));
+    },
+  });
+  const createWorkspace = useMutation({
+    mutationFn: workspacesApi.create,
+    onSuccess: async (workspace) => {
+      queryClient.setQueryData<WorkspaceSummary[] | undefined>(
+        ['workspaces'],
+        (current) => current ? [...current, workspace] : [workspace],
+      );
+      queryClient.setQueryData(['workspace', workspace.id], workspace);
+
+      try {
+        const user = await authApi.setCurrentWorkspace({ workspaceId: workspace.id });
+        queryClient.setQueryData(ME_KEY, user);
+        void queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+        setCreateWorkspaceOpen(false);
+        setWorkspaceMenuOpen(false);
+        toast.success('Workspace created', `Opening ${workspace.name}…`);
+        router.replace(getWorkspacePath(user.currentWorkspace?.slug ?? workspace.slug));
+      } catch (error) {
+        toast.error(getWorkspaceErrorMessage(error));
+      }
     },
     onError: (error) => {
       toast.error(getWorkspaceErrorMessage(error));
@@ -207,12 +342,22 @@ export default function Sidebar({
     router.push(getSettingsPath(workspaceSlug));
   }
 
+  function handleCreateWorkspace(payload: { name: string; description?: string }) {
+    if (!payload.name) {
+      toast.warning('Workspace name cannot be empty.');
+      return;
+    }
+
+    createWorkspace.mutate(payload);
+  }
+
   return (
-    <aside
-      className={`flex flex-col bg-sidebar border-r border-divider shrink-0 transition-all duration-150 ${
-        collapsed ? 'w-16' : 'w-[260px]'
-      }`}
-    >
+    <>
+      <aside
+        className={`flex flex-col bg-sidebar border-r border-divider shrink-0 transition-all duration-150 ${
+          collapsed ? 'w-16' : 'w-[260px]'
+        }`}
+      >
       {/* Workspace header */}
       <div className="h-14 flex items-center px-3 border-b border-divider">
         <div
@@ -298,6 +443,16 @@ export default function Sidebar({
               )}
 
               <div className="mt-2 border-t border-divider pt-2">
+                <button
+                  onClick={() => {
+                    setWorkspaceMenuOpen(false);
+                    setCreateWorkspaceOpen(true);
+                  }}
+                  className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-[13px] text-sub hover:bg-elevated hover:text-ink transition"
+                >
+                  <Icon name="plus" size={14} />
+                  Create workspace
+                </button>
                 <button
                   onClick={goToWorkspaceSettings}
                   className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-[13px] text-sub hover:bg-elevated hover:text-ink transition"
@@ -544,6 +699,18 @@ export default function Sidebar({
           </>
         )}
       </div>
-    </aside>
+      </aside>
+
+      <CreateWorkspaceModal
+        open={createWorkspaceOpen}
+        isPending={createWorkspace.isPending}
+        onClose={() => {
+          if (!createWorkspace.isPending) {
+            setCreateWorkspaceOpen(false);
+          }
+        }}
+        onSubmit={handleCreateWorkspace}
+      />
+    </>
   );
 }

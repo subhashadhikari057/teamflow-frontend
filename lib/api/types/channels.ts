@@ -29,7 +29,15 @@ export interface ChannelMemberSummary {
   joinedAt: string;
 }
 
+export interface ChannelCreatorSummary {
+  id: string;
+  name?: string | null;
+  username: string;
+  avatarUrl?: string | null;
+}
+
 export interface ChannelDetail extends ChannelSummary {
+  creator?: ChannelCreatorSummary | null;
   members?: ChannelMemberSummary[];
 }
 

@@ -4,14 +4,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
+import { useCurrentUser } from '@/hooks/auth';
 import { channelsApi } from '@/lib/api/channels';
+import { getChannelErrorMessage } from '@/lib/api/errors';
 import { useToast } from '@/lib/toast-context';
 import type { ChannelDetail, ChannelSummary } from '@/lib/api/types';
+import { ConfirmDialog } from '@/components/app/settings/_shared';
 
 interface EditChannelModalProps {
   workspaceId: string;
   channel: ChannelSummary;
   onClose: () => void;
+  onDeleted: (nextChannelId: string | null) => void;
 }
 
 function normalizeChannelName(value: string) {
@@ -28,12 +32,15 @@ export default function EditChannelModal({
   workspaceId,
   channel,
   onClose,
+  onDeleted,
 }: EditChannelModalProps) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const me = useCurrentUser();
   const [name, setName] = useState(channel.name);
   const [description, setDescription] = useState(channel.description ?? '');
   const [topic, setTopic] = useState(channel.topic ?? '');
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const normalizedName = useMemo(() => normalizeChannelName(name), [name]);
   const trimmedDescription = description.trim();
   const trimmedTopic = topic.trim();
@@ -42,6 +49,12 @@ export default function EditChannelModal({
   const isDirty = normalizedName !== channel.name
     || trimmedDescription !== initialDescription
     || trimmedTopic !== initialTopic;
+  const currentWorkspaceRole = me?.currentWorkspace?.role;
+  const canDeleteChannel = currentWorkspaceRole === 'OWNER' || currentWorkspaceRole === 'ADMIN';
+
+  function updateCachedChannelLists(updater: (current: ChannelSummary[] | undefined) => ChannelSummary[] | undefined) {
+    queryClient.setQueryData<ChannelSummary[] | undefined>(['channels', workspaceId], updater);
+  }
 
   const updateChannel = useMutation({
     mutationFn: () => channelsApi.update(workspaceId, channel.id, {
@@ -76,20 +89,42 @@ export default function EditChannelModal({
       onClose();
     },
     onError: (error) => {
-      toast.error(error instanceof Error ? error.message : 'Failed to update channel.');
+      toast.error(getChannelErrorMessage(error));
     },
   });
+  const deleteChannel = useMutation({
+    mutationFn: () => channelsApi.delete(workspaceId, channel.id),
+    onSuccess: () => {
+      const currentChannels = queryClient.getQueryData<ChannelSummary[]>(['channels', workspaceId]) ?? [];
+      const remainingChannels = currentChannels.filter((item) => item.id !== channel.id);
+      const nextChannelId = remainingChannels.find((item) => item.isGeneral)?.id
+        ?? remainingChannels[0]?.id
+        ?? null;
+
+      updateCachedChannelLists(() => remainingChannels);
+      queryClient.removeQueries({ queryKey: ['channel', workspaceId, channel.id] });
+      void queryClient.invalidateQueries({ queryKey: ['channels', workspaceId] });
+
+      setConfirmDeleteOpen(false);
+      toast.success('Channel deleted', `#${channel.name} was deleted.`);
+      onDeleted(nextChannelId);
+    },
+    onError: (error) => {
+      toast.error(getChannelErrorMessage(error));
+    },
+  });
+  const isBusy = updateChannel.isPending || deleteChannel.isPending;
 
   useEffect(() => {
     function handleKeydown(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !updateChannel.isPending) {
+      if (event.key === 'Escape' && !isBusy) {
         onClose();
       }
     }
 
     window.addEventListener('keydown', handleKeydown);
     return () => window.removeEventListener('keydown', handleKeydown);
-  }, [onClose, updateChannel.isPending]);
+  }, [isBusy, onClose]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -120,9 +155,9 @@ export default function EditChannelModal({
 
   return (
     <div
-      className="fixed inset-0 z-[220] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 anim-fade"
+        className="fixed inset-0 z-[220] flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 anim-fade"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !updateChannel.isPending) {
+        if (event.target === event.currentTarget && !isBusy) {
           onClose();
         }
       }}
@@ -140,7 +175,7 @@ export default function EditChannelModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={updateChannel.isPending}
+            disabled={isBusy}
             className="w-8 h-8 rounded-md text-muted hover:text-ink hover:bg-elevated transition disabled:opacity-40"
             aria-label="Close edit channel modal"
           >
@@ -202,23 +237,60 @@ export default function EditChannelModal({
 
         </div>
 
+        {canDeleteChannel && !channel.isGeneral && (
+          <div className="border-t border-divider px-6 py-4">
+            <div className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[13px] font-medium text-ink">Delete channel</div>
+                <p className="text-[12px] text-sub mt-1 leading-relaxed">
+                  Permanently remove this channel for everyone in the workspace.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setConfirmDeleteOpen(true)}
+                disabled={isBusy}
+                className="shrink-0 text-danger border-danger/30 hover:border-danger/50 hover:text-danger"
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="border-t border-divider px-6 py-4 flex items-center justify-end gap-3">
           <Button
             type="button"
             variant="secondary"
             onClick={onClose}
-            disabled={updateChannel.isPending}
+            disabled={isBusy}
           >
             Cancel
           </Button>
           <Button
             type="submit"
-            disabled={channel.isGeneral || updateChannel.isPending || !isDirty || !normalizedName}
+            disabled={channel.isGeneral || isBusy || !isDirty || !normalizedName}
           >
             {updateChannel.isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </div>
       </form>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title="Delete channel"
+        description={`Delete #${channel.name} for everyone in this workspace?`}
+        warning="This will remove the channel and its current membership from the workspace."
+        confirmLabel="Delete channel"
+        isPending={deleteChannel.isPending}
+        onConfirm={() => deleteChannel.mutate()}
+        onClose={() => {
+          if (!deleteChannel.isPending) {
+            setConfirmDeleteOpen(false);
+          }
+        }}
+      />
     </div>
   );
 }
