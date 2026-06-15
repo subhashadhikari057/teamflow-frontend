@@ -1,4 +1,5 @@
 import { clearSessionHint } from '@/lib/auth-session-hint';
+import { clearStoredAccessToken, storeAccessToken } from '@/lib/auth-access-token';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5001/api';
 
@@ -74,12 +75,16 @@ async function doRefresh(): Promise<boolean> {
 
     if (!res.ok) {
       clearSessionHint();
+      clearStoredAccessToken();
       return false;
     }
 
+    const body = await res.json().catch(() => null) as { tokens?: { accessToken?: string } } | null;
+    storeAccessToken(body?.tokens?.accessToken);
     return true;
   } catch {
     clearSessionHint();
+    clearStoredAccessToken();
     return false;
   }
 }

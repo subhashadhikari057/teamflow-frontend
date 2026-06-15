@@ -1,17 +1,21 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
 
 interface EditingState {
+  messageId?: string;
   body: string;
-  flag?: boolean;
 }
 
 interface ComposerProps {
   channelName: string;
+  disabled?: boolean;
+  disabledMessage?: string;
+  initialText?: string;
   onSend: (text: string) => void;
+  onRequestEditLastMessage?: () => void;
   editing: EditingState | null;
   setEditing: (e: EditingState | null) => void;
 }
@@ -25,18 +29,22 @@ const TOOLS = [
   { ic: 'paperclip', label: 'Attach', keys: ['Ctrl', 'U'] },
 ];
 
-export default function Composer({ channelName, onSend, editing, setEditing }: ComposerProps) {
-  const [text, setText] = useState('');
+export default function Composer({
+  channelName,
+  disabled = false,
+  disabledMessage,
+  initialText = '',
+  onSend,
+  onRequestEditLastMessage,
+  editing,
+  setEditing,
+}: ComposerProps) {
+  const [text, setText] = useState(initialText);
   const ref = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (editing) {
-      setText(editing.body);
-      ref.current?.focus();
-    }
-  }, [editing]);
+  const editingMessageId = editing?.messageId ?? null;
 
   const send = () => {
+    if (disabled) return;
     const t = text.trim();
     if (!t) return;
     onSend(t);
@@ -51,7 +59,7 @@ export default function Composer({ channelName, onSend, editing, setEditing }: C
       send();
     } else if (e.key === 'ArrowUp' && text === '' && !editing) {
       e.preventDefault();
-      setEditing({ body: '', flag: true });
+      onRequestEditLastMessage?.();
     } else if (e.key === 'Escape' && editing) {
       setEditing(null);
       setText('');
@@ -65,7 +73,7 @@ export default function Composer({ channelName, onSend, editing, setEditing }: C
 
   return (
     <div className="px-5 pb-5 pt-1">
-      {editing?.flag && (
+      {editingMessageId && (
         <div className="flex items-center gap-2 text-[12px] text-sub mb-2 px-1">
           <Icon name="compose" size={12} />
           Editing last message —{' '}
@@ -98,22 +106,28 @@ export default function Composer({ channelName, onSend, editing, setEditing }: C
         </div>
 
         <textarea
+          autoFocus={Boolean(editingMessageId)}
           ref={ref}
           rows={1}
           value={text}
+          disabled={disabled}
           onChange={(e) => { setText(e.target.value); autoResize(e.target); }}
           onKeyDown={onKeyDown}
-          placeholder={`Message ${channelName}`}
-          className="w-full bg-transparent resize-none px-3 py-2.5 text-[15px] text-ink placeholder:text-muted outline-none leading-[1.5]"
+          placeholder={disabled ? (disabledMessage ?? `You can’t message ${channelName}`) : `Message ${channelName}`}
+          className="w-full bg-transparent resize-none px-3 py-2.5 text-[15px] text-ink placeholder:text-muted outline-none leading-[1.5] disabled:cursor-not-allowed disabled:text-sub"
         />
 
         <div className="flex items-center justify-between px-2 pb-2">
           <span className="text-[11px] text-muted pl-1">
-            {editing ? 'Enter to save · Esc to cancel' : 'Enter to send · Shift+Enter for newline'}
+            {disabled
+              ? (disabledMessage ?? 'Messaging is disabled here.')
+              : editingMessageId
+                ? 'Enter to save · Esc to cancel'
+                : 'Enter to send · Shift+Enter for newline'}
           </span>
           <button
             onClick={send}
-            disabled={!text.trim()}
+            disabled={disabled || !text.trim()}
             className="lift w-8 h-8 rounded-md bg-white text-black flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none hover:bg-[#e0e0e0] transition"
           >
             <Icon name="send" size={15} />

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/lib/api/auth';
+import { clearStoredAccessToken } from '@/lib/auth-access-token';
 import type { ActionResponse } from '@/lib/api/types';
 import { clearAuthFlowState, clearSessionHint } from '@/lib/auth-session-hint';
 
@@ -9,6 +10,7 @@ export function useLogout() {
   return useMutation<ActionResponse, Error, void>({
     mutationFn: authApi.logout, // backend clears HttpOnly cookies
     onSettled: () => {
+      clearStoredAccessToken();
       clearSessionHint();
       clearAuthFlowState();
       qc.clear(); // wipe all cached data regardless of server response

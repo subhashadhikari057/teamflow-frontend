@@ -13,6 +13,15 @@ export interface ChannelSummary {
   isGeneral: boolean;
   memberCount: number;
   isMember: boolean;
+  unreadCount: number;
+  lastReadAt?: string | null;
+  lastMessageAt?: string | null;
+  lastMessage?: {
+    id: string;
+    content: string;
+    senderId: string;
+    createdAt: string;
+  } | null;
   createdBy: string;
   createdAt: string;
 }

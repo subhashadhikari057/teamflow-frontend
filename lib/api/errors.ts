@@ -78,6 +78,16 @@ const CHANNEL_MESSAGES: Record<string, string> = {
   CHANNELS_USER_NOT_WORKSPACE_MEMBER:   'This person is not a member of the workspace.',
 };
 
+const MESSAGE_MESSAGES: Record<string, string> = {
+  MESSAGES_CHANNEL_ARCHIVED:          'This channel is archived, so messages are unavailable.',
+  MESSAGES_CHANNEL_NOT_FOUND:         'This channel could not be found.',
+  MESSAGES_MESSAGE_CONTENT_REQUIRED:  'Message content cannot be empty.',
+  MESSAGES_MESSAGE_DELETE_FORBIDDEN:  'You can only delete your own messages.',
+  MESSAGES_MESSAGE_EDIT_FORBIDDEN:    'You can only edit your own messages.',
+  MESSAGES_MESSAGE_NOT_FOUND:         'This message could not be found.',
+  MESSAGES_READ_ONLY_CHANNEL:         'This channel is read-only for your role.',
+};
+
 const FALLBACK = 'Something went wrong. Please try again.';
 
 function getMappedErrorMessage(error: unknown, messages: Record<string, string>): string {
@@ -104,6 +114,10 @@ export function getWorkspaceErrorMessage(error: unknown): string {
 
 export function getChannelErrorMessage(error: unknown): string {
   return getMappedErrorMessage(error, CHANNEL_MESSAGES);
+}
+
+export function getMessageErrorMessage(error: unknown): string {
+  return getMappedErrorMessage(error, MESSAGE_MESSAGES);
 }
 
 export function getWorkspaceLeaveErrorMessage(error: unknown): string {

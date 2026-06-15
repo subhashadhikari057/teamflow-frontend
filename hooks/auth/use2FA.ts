@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/lib/api/auth';
 import { ME_KEY } from './useMe';
+import { storeAccessToken } from '@/lib/auth-access-token';
 import { setSessionHint } from '@/lib/auth-session-hint';
 import type {
   Confirm2FAPayload,
@@ -36,6 +37,7 @@ export function useVerify2FA() {
     mutationFn: authApi.verify2FA,
     onSuccess: (data) => {
       if (!data.requiresTwoFactor) {
+        storeAccessToken(data.session.tokens.accessToken);
         // Backend set cookies — force a fresh /auth/me on app boot
         setSessionHint();
         qc.removeQueries({ queryKey: ME_KEY });

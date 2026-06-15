@@ -551,6 +551,7 @@ export default function Sidebar({
                   {channels.map((channel) => {
                     const isActive = active.type === 'channel' && active.id === channel.id;
                     const iconName = channel.type === 'PRIVATE' ? 'lock' : 'hash';
+                    const unreadCount = channel.unreadCount ?? 0;
 
                     return (
                       <button
@@ -573,6 +574,11 @@ export default function Sidebar({
                         {!collapsed && (
                           <span className={`truncate ${channel.isGeneral ? 'font-semibold text-ink' : ''}`}>
                             {channel.name}
+                          </span>
+                        )}
+                        {!collapsed && unreadCount > 0 && (
+                          <span className="ml-auto text-[11px] font-semibold bg-white text-black rounded px-1.5 py-px">
+                            {unreadCount}
                           </span>
                         )}
                       </button>

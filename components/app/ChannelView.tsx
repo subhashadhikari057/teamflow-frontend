@@ -1,17 +1,31 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect, useRef } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { useCurrentUser } from '@/hooks/auth';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
 import Badge from '@/components/primitives/Badge';
+import Button from '@/components/primitives/Button';
 import MessageBody from './MessageBody';
 import Composer from './Composer';
 import { CHANNELS, ENG_MESSAGES, USERS } from '@/lib/data';
+import { authApi } from '@/lib/api/auth';
 import { channelsApi } from '@/lib/api/channels';
+import { getMessageErrorMessage } from '@/lib/api/errors';
+import { messagesApi } from '@/lib/api/messages';
 import { getUploadFileUrl } from '@/lib/api/uploads';
-import type { ChannelMemberSummary, ChannelSummary } from '@/lib/api/types';
+import { getStoredAccessToken, storeAccessToken } from '@/lib/auth-access-token';
+import {
+  type ChannelMetaUpdatedPayload,
+  createMessagesSocket,
+  type MessageCreatedPayload,
+  type MessageDeletedPayload,
+  type MessageUpdatedPayload,
+} from '@/lib/realtime/messages-socket';
+import { useToast } from '@/lib/toast-context';
+import type { ChannelMemberSummary, ChannelMessage, ChannelSummary, WorkspaceRole } from '@/lib/api/types';
 import type { Message } from '@/lib/types';
 import { useAppearance } from '@/lib/appearance-context';
 
@@ -33,6 +47,109 @@ interface ChannelViewProps {
   infoOpen: boolean;
 }
 
+interface UiMessage {
+  id: string;
+  userId: string;
+  senderName: string;
+  senderUsername: string;
+  senderAvatarUrl?: string | null;
+  time: string;
+  body: string;
+  reactions: Message['reactions'];
+  edited?: boolean;
+  thread?: Message['thread'];
+}
+
+interface EditingState {
+  messageId?: string;
+  body: string;
+}
+
+const MESSAGE_PAGE_SIZE = 30;
+type ChannelMessagesData = InfiniteData<ChannelMessage[], string | undefined>;
+
+function formatMessageTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function mapApiMessage(message: ChannelMessage): UiMessage {
+  return {
+    id: message.id,
+    userId: message.senderId,
+    senderName: message.sender.name,
+    senderUsername: message.sender.username,
+    senderAvatarUrl: message.sender.avatarUrl,
+    time: formatMessageTime(message.createdAt),
+    body: message.content,
+    reactions: [],
+    edited: message.isEdited,
+  };
+}
+
+function upsertMessageInPages(
+  current: ChannelMessagesData | undefined,
+  message: ChannelMessage,
+): ChannelMessagesData | undefined {
+  if (!current) {
+    return current;
+  }
+
+  const pages = current.pages.map((page) =>
+    page.map((item) => (item.id === message.id ? message : item)),
+  );
+  const alreadyExists = pages.some((page) => page.some((item) => item.id === message.id));
+
+  if (alreadyExists) {
+    return { ...current, pages };
+  }
+
+  const nextPages = [...pages];
+  const lastIndex = nextPages.length - 1;
+  const lastPage = nextPages[lastIndex] ?? [];
+  nextPages[lastIndex] = [...lastPage, message];
+
+  return { ...current, pages: nextPages };
+}
+
+function mapMockMessage(message: Message): UiMessage {
+  const fallbackUser = USERS[message.userId];
+
+  return {
+    id: message.id,
+    userId: message.userId,
+    senderName: fallbackUser?.name ?? message.userId,
+    senderUsername: fallbackUser?.name?.toLowerCase().replace(/\s+/g, '.') ?? message.userId,
+    senderAvatarUrl: null,
+    time: message.time,
+    body: message.body,
+    reactions: message.reactions,
+    thread: message.thread,
+    edited: message.edited,
+  };
+}
+
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase() || '?';
+}
+
+function isPrivilegedRole(role?: WorkspaceRole) {
+  return role === 'OWNER' || role === 'ADMIN';
+}
+
 function Reaction({ r }: { r: { emoji: string; count: number; by: string[] } }) {
   const mine = r.by.includes('ashim');
   return (
@@ -49,25 +166,70 @@ function Reaction({ r }: { r: { emoji: string; count: number; by: string[] } }) 
   );
 }
 
-function MessageRow({
-  m, onOpenThread, onOpenProfile,
+function MessageAvatar({
+  name,
+  userId,
+  avatarUrl,
+  size,
 }: {
-  m: Message;
+  name: string;
+  userId: string;
+  avatarUrl?: string | null;
+  size: number;
+}) {
+  if (avatarUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={getUploadFileUrl(avatarUrl)}
+        alt={name}
+        className="rounded-md object-cover shrink-0"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  if (USERS[userId]) {
+    return <Avatar userId={userId} size={size} presence={false} />;
+  }
+
+  return (
+    <div
+      className="rounded-md shrink-0 flex items-center justify-center font-semibold text-white select-none"
+      style={{ width: size, height: size, fontSize: Math.max(10, size * 0.35), background: '#3b82f6' }}
+    >
+      {getInitials(name)}
+    </div>
+  );
+}
+
+function MessageRow({
+  m,
+  currentUserId,
+  onDelete,
+  onEdit,
+  onOpenThread,
+  onOpenProfile,
+}: {
+  m: UiMessage;
+  currentUserId?: string;
+  onDelete: (messageId: string) => void;
+  onEdit: (message: UiMessage) => void;
   onOpenThread: (id: string) => void;
   onOpenProfile: (id: string) => void;
 }) {
-  const u = USERS[m.userId];
   const [hover, setHover] = useState(false);
   const { density } = useAppearance();
+  const isMine = currentUserId === m.userId;
 
-  const isCozy     = density === 'cozy';
-  const isCompact  = density === 'compact';
+  const isCozy = density === 'cozy';
+  const isCompact = density === 'compact';
   const avatarSize = isCompact ? 30 : 36;
-  const rowPy      = isCozy ? 'py-[3px]' : isCompact ? 'py-1' : 'py-1.5';
+  const rowPy = isCozy ? 'py-[3px]' : isCompact ? 'py-1' : 'py-1.5';
 
   const extras = (
     <>
-      {m.reactions && m.reactions.length > 0 && (
+      {m.reactions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {m.reactions.map((r, i) => <Reaction key={i} r={r} />)}
           <button className="lift inline-flex items-center justify-center w-7 h-6 rounded-md border border-line bg-panel text-muted hover:text-ink hover:border-[#555555] transition">
@@ -99,21 +261,31 @@ function MessageRow({
 
   const hoverActions = hover && (
     <div className="absolute -top-3 right-4 flex items-center bg-panel border border-line rounded-md anim-fade overflow-hidden">
-      {(['smile', 'cornerreply', 'more'] as const).map((ic, i) => (
-        <button
-          key={ic}
-          onClick={ic === 'cornerreply' ? () => onOpenThread(m.id) : undefined}
-          className={`w-8 h-8 flex items-center justify-center text-sub hover:text-ink hover:bg-elevated transition ${
-            i > 0 ? 'border-l border-divider' : ''
-          }`}
-        >
-          <Icon name={ic} size={15} />
-        </button>
-      ))}
+      <button
+        onClick={() => onOpenThread(m.id)}
+        className="w-8 h-8 flex items-center justify-center text-sub hover:text-ink hover:bg-elevated transition"
+      >
+        <Icon name="cornerreply" size={15} />
+      </button>
+      {isMine && (
+        <>
+          <button
+            onClick={() => onEdit(m)}
+            className="w-8 h-8 flex items-center justify-center text-sub hover:text-ink hover:bg-elevated transition border-l border-divider"
+          >
+            <Icon name="compose" size={14} />
+          </button>
+          <button
+            onClick={() => onDelete(m.id)}
+            className="w-8 h-8 flex items-center justify-center text-sub hover:text-danger hover:bg-elevated transition border-l border-divider"
+          >
+            <Icon name="x" size={14} />
+          </button>
+        </>
+      )}
     </div>
   );
 
-  /* ── Cozy: no avatar, time left, sender+body inline ─────────────── */
   if (isCozy) {
     return (
       <div
@@ -126,7 +298,7 @@ function MessageRow({
           onClick={() => onOpenProfile(m.userId)}
           className="text-[13px] font-semibold text-ink hover:underline shrink-0"
         >
-          {u.name}
+          {m.senderName}
         </button>
         <div className="min-w-0 flex-1" style={{ fontSize: 'var(--fs, 14px)' }}>
           <MessageBody body={m.body} />
@@ -137,7 +309,6 @@ function MessageRow({
     );
   }
 
-  /* ── Comfortable / Compact: avatar + stacked layout ─────────────── */
   return (
     <div
       className={`group relative flex gap-3 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
@@ -145,7 +316,12 @@ function MessageRow({
       onMouseLeave={() => setHover(false)}
     >
       <button onClick={() => onOpenProfile(m.userId)} className="shrink-0 mt-0.5">
-        <Avatar userId={m.userId} size={avatarSize} presence={false} />
+        <MessageAvatar
+          userId={m.userId}
+          name={m.senderName}
+          avatarUrl={m.senderAvatarUrl}
+          size={avatarSize}
+        />
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
@@ -154,7 +330,7 @@ function MessageRow({
             className="font-semibold text-ink hover:underline"
             style={{ fontSize: 'var(--fs, 14px)' }}
           >
-            {u.name}
+            {m.senderName}
           </button>
           <span className="text-[11px] text-muted">{m.time}</span>
           {m.edited && <span className="text-[11px] text-muted">(edited)</span>}
@@ -167,15 +343,6 @@ function MessageRow({
       {hoverActions}
     </div>
   );
-}
-
-function getInitials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0] ?? '')
-    .join('')
-    .slice(0, 2)
-    .toUpperCase() || '?';
 }
 
 function ChannelHeaderAvatar({ member }: { member: ChannelMemberSummary }) {
@@ -244,53 +411,434 @@ function getSeedMessages({
 }
 
 function ConversationPane({
+  channelId,
   channelIntro,
   channelName,
+  channelUnreadCount,
+  joinedChannelIds,
   composerLabel,
+  currentUserId,
   isDm,
+  isReadOnly,
+  isPrivileged,
   openProfile,
   openThread,
   seedMessages,
   showTyping,
+  workspaceId,
 }: {
+  channelId?: string;
   channelIntro: string;
   channelName: string;
+  channelUnreadCount: number;
+  joinedChannelIds: string[];
   composerLabel: string;
+  currentUserId?: string;
   isDm: boolean;
+  isReadOnly: boolean;
+  isPrivileged: boolean;
   openProfile: (userId: string) => void;
   openThread: (id: string) => void;
   seedMessages: Message[];
   showTyping: boolean;
+  workspaceId: string;
 }) {
   const { density } = useAppearance();
-  const [messages, setMessages] = useState<Message[]>(seedMessages);
-  const [editing, setEditing] = useState<{ body: string; flag?: boolean } | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [editing, setEditing] = useState<EditingState | null>(null);
+
+  const channelMessagesQuery = useInfiniteQuery({
+    queryKey: ['channel-messages', workspaceId, channelId],
+    queryFn: ({ pageParam }) => messagesApi.list(workspaceId, channelId as string, {
+      cursor: pageParam,
+      limit: MESSAGE_PAGE_SIZE,
+    }),
+    enabled: !isDm && Boolean(channelId),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.length < MESSAGE_PAGE_SIZE) {
+        return undefined;
+      }
+
+      return lastPage[0]?.id;
+    },
+    staleTime: 15_000,
+  });
+
+  const sendMessage = useMutation({
+    mutationFn: (content: string) => messagesApi.send(workspaceId, channelId as string, { content }),
+    onSuccess: (message) => {
+      const now = new Date().toISOString();
+
+      queryClient.setQueryData(
+        ['channel-messages', workspaceId, channelId],
+        (current: ChannelMessagesData | undefined) => upsertMessageInPages(current, message),
+      );
+      queryClient.setQueryData<ChannelSummary[] | undefined>(
+        ['channels', workspaceId],
+        (current) => current?.map((channel) => (
+          channel.id === channelId
+            ? {
+              ...channel,
+              unreadCount: 0,
+              lastReadAt: now,
+              lastMessageAt: message.createdAt,
+              lastMessage: {
+                id: message.id,
+                content: message.content,
+                senderId: message.senderId,
+                createdAt: message.createdAt,
+              },
+            }
+            : channel
+        )),
+      );
+    },
+    onError: (error) => {
+      toast.error(getMessageErrorMessage(error));
+    },
+  });
+
+  const updateMessage = useMutation({
+    mutationFn: ({ messageId, content }: { messageId: string; content: string }) =>
+      messagesApi.update(workspaceId, channelId as string, messageId, { content }),
+    onSuccess: (message) => {
+      queryClient.setQueryData(
+        ['channel-messages', workspaceId, channelId],
+        (current: ChannelMessagesData | undefined) => {
+          if (!current) {
+            return current;
+          }
+
+          return {
+            ...current,
+            pages: current.pages.map((page) =>
+              page.map((item) => (item.id === message.id ? message : item)),
+            ),
+          };
+        },
+      );
+      setEditing(null);
+    },
+    onError: (error) => {
+      toast.error(getMessageErrorMessage(error));
+    },
+  });
+
+  const deleteMessage = useMutation({
+    mutationFn: (messageId: string) => messagesApi.remove(workspaceId, channelId as string, messageId),
+    onSuccess: (_, messageId) => {
+      queryClient.setQueryData(
+        ['channel-messages', workspaceId, channelId],
+        (current: ChannelMessagesData | undefined) => {
+          if (!current) {
+            return current;
+          }
+
+          return {
+            ...current,
+            pages: current.pages.map((page) => page.filter((item) => item.id !== messageId)),
+          };
+        },
+      );
+      if (editing?.messageId === messageId) {
+        setEditing(null);
+      }
+    },
+    onError: (error) => {
+      toast.error(getMessageErrorMessage(error));
+    },
+  });
+  const markChannelRead = useMutation({
+    mutationFn: () => channelsApi.markRead(workspaceId, channelId as string),
+    onSuccess: () => {
+      const now = new Date().toISOString();
+
+      queryClient.setQueryData<ChannelSummary[] | undefined>(
+        ['channels', workspaceId],
+        (current) => current?.map((channel) => (
+          channel.id === channelId
+            ? { ...channel, unreadCount: 0, lastReadAt: now }
+            : channel
+        )),
+      );
+    },
+  });
+
+  const apiMessages = !isDm
+    ? channelMessagesQuery.data?.pages.flatMap((page) => page).map(mapApiMessage) ?? []
+    : [];
+  const fallbackMessages = seedMessages.map(mapMockMessage);
+  const messages = !isDm && channelMessagesQuery.data ? apiMessages : fallbackMessages;
+  const canLoadOlder = !isDm && Boolean(channelMessagesQuery.hasNextPage);
+  const isBusy = sendMessage.isPending || updateMessage.isPending || deleteMessage.isPending;
+  const composerHidden = !isDm && isReadOnly && !isPrivileged;
+  const joinedChannelIdsKey = joinedChannelIds.join(',');
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
-
-  const handleSend = (text: string) => {
-    if (editing?.flag) {
-      setMessages((prev) => {
-        const idx = [...prev].reverse().findIndex((m) => m.userId === 'ashim');
-        if (idx === -1) return prev;
-        const realIdx = prev.length - 1 - idx;
-        return prev.map((m, i) => (i === realIdx ? { ...m, body: text, edited: true } : m));
-      });
+    if (
+      isDm
+      || !channelId
+      || channelUnreadCount <= 0
+      || channelMessagesQuery.isLoading
+      || channelMessagesQuery.isError
+    ) {
       return;
     }
 
-    setMessages((prev) => [
-      ...prev,
-      { id: `new-${prev.length}`, userId: 'ashim', time: 'now', body: text, reactions: [] },
-    ]);
-  };
+    void markChannelRead.mutateAsync();
+  }, [channelId, channelMessagesQuery.isError, channelMessagesQuery.isLoading, channelUnreadCount, isDm, markChannelRead]);
+
+  useEffect(() => {
+    if (isDm || !channelId) {
+      return;
+    }
+
+    let active = true;
+    let socketCleanup: (() => void) | null = null;
+
+    async function connectRealtime() {
+      let token = getStoredAccessToken();
+
+      if (!token) {
+        try {
+          const session = await authApi.refresh();
+          token = session.tokens.accessToken;
+          storeAccessToken(token);
+        } catch {
+          return;
+        }
+      }
+
+      if (!active || !token) {
+        return;
+      }
+
+      const socket = createMessagesSocket(token);
+
+      const appendRealtimeMessage = (message: ChannelMessage) => {
+        queryClient.setQueryData(
+          ['channel-messages', workspaceId, channelId],
+          (current: ChannelMessagesData | undefined) => upsertMessageInPages(current, message),
+        );
+      };
+
+      const updateRealtimeMessage = (message: ChannelMessage) => {
+        queryClient.setQueryData(
+          ['channel-messages', workspaceId, channelId],
+          (current: ChannelMessagesData | undefined) => {
+            if (!current) {
+              return current;
+            }
+
+            return {
+              ...current,
+              pages: current.pages.map((page) =>
+                page.map((item) => (item.id === message.id ? message : item)),
+              ),
+            };
+          },
+        );
+      };
+
+      const removeRealtimeMessage = (messageId: string) => {
+        queryClient.setQueryData(
+          ['channel-messages', workspaceId, channelId],
+          (current: ChannelMessagesData | undefined) => {
+            if (!current) {
+              return current;
+            }
+
+            return {
+              ...current,
+              pages: current.pages.map((page) => page.filter((item) => item.id !== messageId)),
+            };
+          },
+        );
+      };
+
+      const updateChannelPreview = (message: ChannelMessage | null) => {
+        const now = new Date().toISOString();
+
+        queryClient.setQueryData<ChannelSummary[] | undefined>(
+          ['channels', workspaceId],
+          (current) => current?.map((channel) => (
+            channel.id === channelId
+              ? {
+                ...channel,
+                unreadCount: 0,
+                lastReadAt: now,
+                lastMessageAt: message?.createdAt ?? channel.lastMessageAt ?? null,
+                lastMessage: message
+                  ? {
+                    id: message.id,
+                    content: message.content,
+                    senderId: message.senderId,
+                    createdAt: message.createdAt,
+                  }
+                  : channel.lastMessage,
+              }
+              : channel
+          )),
+        );
+      };
+
+      const applyMessageToChannelMeta = (incomingChannelId: string, message: ChannelMessage) => {
+        queryClient.setQueryData<ChannelSummary[] | undefined>(
+          ['channels', workspaceId],
+          (current) => current?.map((channel) => {
+            if (channel.id !== incomingChannelId) {
+              return channel;
+            }
+
+            const isActiveChannel = incomingChannelId === channelId;
+            const isOwnMessage = message.senderId === currentUserId;
+
+            return {
+              ...channel,
+              unreadCount: isActiveChannel || isOwnMessage
+                ? 0
+                : (channel.unreadCount ?? 0) + 1,
+              lastReadAt: isActiveChannel || isOwnMessage
+                ? new Date().toISOString()
+                : channel.lastReadAt ?? null,
+              lastMessageAt: message.createdAt,
+              lastMessage: {
+                id: message.id,
+                content: message.content,
+                senderId: message.senderId,
+                createdAt: message.createdAt,
+              },
+            };
+          }),
+        );
+      };
+
+      const updateChannelMeta = ({
+        channelId: updatedChannelId,
+        unreadCount,
+        lastReadAt,
+        lastMessageAt,
+        lastMessage,
+      }: ChannelMetaUpdatedPayload) => {
+        queryClient.setQueryData<ChannelSummary[] | undefined>(
+          ['channels', workspaceId],
+          (current) => current?.map((channel) => (
+            channel.id === updatedChannelId
+              ? {
+                ...channel,
+                unreadCount,
+                lastReadAt: lastReadAt ?? null,
+                lastMessageAt: lastMessageAt ?? null,
+                lastMessage: lastMessage ?? null,
+              }
+              : channel
+          )),
+        );
+      };
+
+      const handleCreated = ({ channelId: incomingChannelId, message }: MessageCreatedPayload) => {
+        applyMessageToChannelMeta(incomingChannelId, message);
+
+        if (incomingChannelId !== channelId) {
+          return;
+        }
+
+        appendRealtimeMessage(message);
+        updateChannelPreview(message);
+      };
+
+      const handleUpdated = ({ channelId: incomingChannelId, message }: MessageUpdatedPayload) => {
+        if (incomingChannelId !== channelId) {
+          return;
+        }
+
+        updateRealtimeMessage(message);
+        updateChannelPreview(message);
+      };
+
+      const handleDeleted = ({ channelId: incomingChannelId, messageId }: MessageDeletedPayload) => {
+        if (incomingChannelId !== channelId) {
+          return;
+        }
+
+        removeRealtimeMessage(messageId);
+        void queryClient.invalidateQueries({ queryKey: ['channels', workspaceId] });
+      };
+
+      const handleChannelMetaUpdated = (payload: ChannelMetaUpdatedPayload) => {
+        if (payload.workspaceId !== workspaceId) {
+          return;
+        }
+
+        updateChannelMeta(payload);
+      };
+
+      socket.on('message.created', handleCreated);
+      socket.on('message.updated', handleUpdated);
+      socket.on('message.deleted', handleDeleted);
+      socket.on('channel.meta.updated', handleChannelMetaUpdated);
+
+      joinedChannelIds.forEach((joinedChannelId) => {
+        socket.emit('channel.join', {
+          workspaceId,
+          channelId: joinedChannelId,
+        });
+      });
+
+      socketCleanup = () => {
+        joinedChannelIds.forEach((joinedChannelId) => {
+          socket.emit('channel.leave', {
+            workspaceId,
+            channelId: joinedChannelId,
+          });
+        });
+        socket.off('message.created', handleCreated);
+        socket.off('message.updated', handleUpdated);
+        socket.off('message.deleted', handleDeleted);
+        socket.off('channel.meta.updated', handleChannelMetaUpdated);
+        socket.disconnect();
+      };
+    }
+
+    void connectRealtime();
+
+    return () => {
+      active = false;
+      socketCleanup?.();
+    };
+  }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, workspaceId]);
+
+  function handleSend(text: string) {
+    if (isDm) {
+      return;
+    }
+
+    if (editing?.messageId) {
+      updateMessage.mutate({ messageId: editing.messageId, content: text });
+      return;
+    }
+
+    sendMessage.mutate(text);
+  }
+
+  function requestEditLastMessage() {
+    const lastOwnMessage = [...messages].reverse().find((message) => message.userId === currentUserId);
+
+    if (!lastOwnMessage) {
+      return;
+    }
+
+    setEditing({
+      messageId: lastOwnMessage.id,
+      body: lastOwnMessage.body,
+    });
+  }
 
   return (
     <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
+      <div className="flex-1 overflow-y-auto py-4">
         {!isDm && (
           <div className="px-5 pb-4 mb-2">
             <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
@@ -303,11 +851,51 @@ function ConversationPane({
           </div>
         )}
 
-        <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
-          {messages.map((m) => (
-            <MessageRow key={m.id} m={m} onOpenThread={openThread} onOpenProfile={openProfile} />
-          ))}
-        </div>
+        {!isDm && canLoadOlder && (
+          <div className="px-5 pb-4">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void channelMessagesQuery.fetchNextPage()}
+              disabled={channelMessagesQuery.isFetchingNextPage}
+            >
+              {channelMessagesQuery.isFetchingNextPage ? 'Loading…' : 'Load older messages'}
+            </Button>
+          </div>
+        )}
+
+        {!isDm && channelMessagesQuery.isLoading && (
+          <div className="px-5 py-10 text-[13px] text-sub">Loading messages…</div>
+        )}
+
+        {!isDm && channelMessagesQuery.isError && (
+          <div className="px-5 py-10 flex items-center gap-3">
+            <span className="text-[13px] text-sub">We couldn&apos;t load channel messages.</span>
+            <Button variant="secondary" size="sm" onClick={() => void channelMessagesQuery.refetch()}>
+              Retry
+            </Button>
+          </div>
+        )}
+
+        {(!isDm ? !channelMessagesQuery.isLoading && !channelMessagesQuery.isError : true) && (
+          <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
+            {messages.map((m) => (
+              <MessageRow
+                key={m.id}
+                m={m}
+                currentUserId={currentUserId}
+                onDelete={(messageId) => deleteMessage.mutate(messageId)}
+                onEdit={(message) => setEditing({ messageId: message.id, body: message.body })}
+                onOpenThread={openThread}
+                onOpenProfile={openProfile}
+              />
+            ))}
+          </div>
+        )}
+
+        {!isDm && !channelMessagesQuery.isLoading && !channelMessagesQuery.isError && messages.length === 0 && (
+          <div className="px-5 py-10 text-[13px] text-sub">No messages yet. Start the conversation.</div>
+        )}
 
         {showTyping && (
           <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
@@ -317,19 +905,35 @@ function ConversationPane({
         )}
       </div>
 
-      <Composer
-        channelName={composerLabel}
-        onSend={handleSend}
-        editing={editing}
-        setEditing={setEditing}
-      />
+      {!composerHidden && (
+        <Composer
+          key={`${channelId ?? 'dm'}:${editing?.messageId ?? 'new'}`}
+          channelName={composerLabel}
+          disabled={isBusy}
+          initialText={editing?.body ?? ''}
+          onSend={handleSend}
+          onRequestEditLastMessage={requestEditLastMessage}
+          editing={editing}
+          setEditing={setEditing}
+        />
+      )}
     </>
   );
 }
 
 export default function ChannelView({
-  active, workspaceId, channels, onToggleSidebar, openSearch, openCall, openThread, openProfile, openInfo, infoOpen,
+  active,
+  workspaceId,
+  channels,
+  onToggleSidebar,
+  openSearch,
+  openCall,
+  openThread,
+  openProfile,
+  openInfo,
+  infoOpen,
 }: ChannelViewProps) {
+  const me = useCurrentUser();
   const isDm = active.type === 'dm';
   const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
   const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
@@ -357,10 +961,17 @@ export default function ChannelView({
     channelName,
     isDm,
   });
+  const realtimeChannelIds = useMemo(
+    () => channels
+      .filter((channel) => channel.isMember)
+      .map((channel) => channel.id),
+    [channels],
+  );
+  const isReadOnly = Boolean(apiChannel?.isReadOnly);
+  const isPrivileged = isPrivilegedRole(me?.currentWorkspace?.role);
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-bg">
-      {/* Header */}
       <div className="h-14 border-b border-divider flex items-center px-4 gap-3 shrink-0">
         <button
           onClick={onToggleSidebar}
@@ -455,14 +1066,21 @@ export default function ChannelView({
 
       <ConversationPane
         key={conversationKey}
+        channelId={apiChannel?.id}
         channelIntro={channelIntro}
         channelName={channelName}
+        channelUnreadCount={apiChannel?.unreadCount ?? 0}
+        joinedChannelIds={realtimeChannelIds}
         composerLabel={isDm ? dmUser!.name : `#${channelName}`}
+        currentUserId={me?.id}
         isDm={isDm}
+        isReadOnly={isReadOnly}
+        isPrivileged={isPrivileged}
         openProfile={openProfile}
         openThread={openThread}
         seedMessages={seedMessages}
         showTyping={!isDm && channelName === 'engineering'}
+        workspaceId={workspaceId}
       />
     </div>
   );
