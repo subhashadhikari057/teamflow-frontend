@@ -4,6 +4,7 @@ import { ME_KEY } from './useMe';
 import { storeAccessToken } from '@/lib/auth-access-token';
 import type { LoginPayload, LoginResponse } from '@/lib/api/types';
 import { setSessionHint } from '@/lib/auth-session-hint';
+import { USER_PREFERENCE_SETTING_QUERY_KEY } from '@/lib/user-preference-setting';
 
 export function useLogin() {
   const qc = useQueryClient();
@@ -16,6 +17,7 @@ export function useLogin() {
         // Backend set HttpOnly cookies — force a fresh /auth/me on app boot
         setSessionHint();
         qc.removeQueries({ queryKey: ME_KEY });
+        qc.removeQueries({ queryKey: USER_PREFERENCE_SETTING_QUERY_KEY });
       }
       // requiresTwoFactor === true: caller reads data.challengeToken and goes to 2FA step
     },

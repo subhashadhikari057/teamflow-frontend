@@ -467,7 +467,8 @@ function ConversationPane({
   const userPreferenceSettingQuery = useQuery({
     queryKey: USER_PREFERENCE_SETTING_QUERY_KEY,
     queryFn: authApi.getUserPreferenceSetting,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const channelMessagesQuery = useInfiniteQuery({
@@ -841,7 +842,11 @@ function ConversationPane({
       const handleCreated = ({ channelId: incomingChannelId, message }: MessageCreatedPayload) => {
         applyMessageToChannelMeta(incomingChannelId, message);
 
-        if (message.senderId !== currentUserId && userPreferenceSettingQuery.data?.messageSoundEnabled !== false) {
+        const messageSoundEnabled = queryClient.getQueryData<{ messageSoundEnabled: boolean }>(
+          USER_PREFERENCE_SETTING_QUERY_KEY,
+        )?.messageSoundEnabled;
+
+        if (message.senderId !== currentUserId && messageSoundEnabled === true) {
           void playMessageSound();
         }
 

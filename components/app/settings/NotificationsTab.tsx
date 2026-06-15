@@ -21,7 +21,8 @@ export default function NotificationsTab() {
   const userPreferenceSettingQuery = useQuery({
     queryKey: USER_PREFERENCE_SETTING_QUERY_KEY,
     queryFn: authApi.getUserPreferenceSetting,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
   const updateUserPreferenceSetting = useMutation({
     mutationFn: authApi.updateUserPreferenceSetting,
@@ -35,7 +36,7 @@ export default function NotificationsTab() {
       toast.error(getAuthErrorMessage(error));
     },
   });
-  const messageSoundEnabled = userPreferenceSettingQuery.data?.messageSoundEnabled ?? true;
+  const messageSoundEnabled = userPreferenceSettingQuery.data?.messageSoundEnabled ?? false;
 
   function addKeyword() {
     const k = keyword.trim();

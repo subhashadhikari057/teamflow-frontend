@@ -3,6 +3,7 @@ import { authApi } from '@/lib/api/auth';
 import { ME_KEY } from './useMe';
 import { storeAccessToken } from '@/lib/auth-access-token';
 import { setSessionHint } from '@/lib/auth-session-hint';
+import { USER_PREFERENCE_SETTING_QUERY_KEY } from '@/lib/user-preference-setting';
 import type {
   Confirm2FAPayload,
   Disable2FAPayload,
@@ -41,6 +42,7 @@ export function useVerify2FA() {
         // Backend set cookies — force a fresh /auth/me on app boot
         setSessionHint();
         qc.removeQueries({ queryKey: ME_KEY });
+        qc.removeQueries({ queryKey: USER_PREFERENCE_SETTING_QUERY_KEY });
       }
     },
   });
