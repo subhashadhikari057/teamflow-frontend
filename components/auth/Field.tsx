@@ -11,9 +11,21 @@ interface FieldProps {
   placeholder?: string;
   autoFocus?: boolean;
   onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  error?: string;
+  autoComplete?: string;
 }
 
-export default function Field({ label, type = 'text', value, onChange, placeholder, autoFocus, onKeyDown }: FieldProps) {
+export default function Field({
+  label,
+  type = 'text',
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+  onKeyDown,
+  error,
+  autoComplete,
+}: FieldProps) {
   const isPassword = type === 'password';
   const [show, setShow] = useState(false);
 
@@ -28,7 +40,9 @@ export default function Field({ label, type = 'text', value, onChange, placehold
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           autoFocus={autoFocus}
-          className={`w-full h-10 px-3 rounded-md bg-elevated border border-line text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition ${isPassword ? 'pr-10' : ''}`}
+          autoComplete={autoComplete}
+          aria-invalid={error ? 'true' : 'false'}
+          className={`w-full h-10 px-3 rounded-md bg-elevated border text-[14px] text-ink placeholder:text-muted outline-none focus:ring-2 focus:ring-white/20 transition ${error ? 'border-red-400/80 focus:border-red-400' : 'border-line focus:border-[#555555]'} ${isPassword ? 'pr-10' : ''}`}
         />
         {isPassword && (
           <button
@@ -41,6 +55,7 @@ export default function Field({ label, type = 'text', value, onChange, placehold
           </button>
         )}
       </div>
+      {error && <span className="mt-1.5 block text-[12px] text-red-400">{error}</span>}
     </label>
   );
 }
