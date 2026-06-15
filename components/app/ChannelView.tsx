@@ -399,7 +399,7 @@ export default function ChannelView({
           </div>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto mr-2 flex items-center gap-2">
           {!isDm && (
             <div className="hidden sm:flex items-center gap-2 mr-1">
               <div className="flex -space-x-2">

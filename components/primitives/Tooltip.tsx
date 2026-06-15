@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 interface TooltipProps {
@@ -53,7 +53,7 @@ export default function Tooltip({ label, keys, side = 'top', children }: Tooltip
           className="fixed z-[200] whitespace-nowrap pointer-events-none anim-fade"
           style={{ top: coords.top, left: coords.left, transform: transformMap[side] }}
         >
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-black border border-line text-xs text-ink shadow-lg">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-[#3a3a3a] bg-[#171717] text-xs text-white shadow-[0_10px_30px_rgba(0,0,0,0.45)]">
             <span>{label}</span>
             {keys?.map((k, i) => <span key={i} className="kbd">{k}</span>)}
           </div>
