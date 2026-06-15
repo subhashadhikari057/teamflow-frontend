@@ -5,13 +5,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import EditChannelModal from '@/components/app/EditChannelModal';
+import { ConfirmDialog } from '@/components/app/settings/_shared';
 import { CHANNELS, USERS } from '@/lib/data';
 import { channelsApi } from '@/lib/api/channels';
-import { getChannelErrorMessage } from '@/lib/api/errors';
+import { getChannelErrorMessage, getMessageErrorMessage } from '@/lib/api/errors';
+import { messagesApi } from '@/lib/api/messages';
 import { getUploadFileUrl } from '@/lib/api/uploads';
 import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
-import type { ChannelDetail, ChannelMemberSummary, ChannelSummary, WorkspaceMemberSummary } from '@/lib/api/types';
+import type {
+  ChannelDetail,
+  ChannelMemberSummary,
+  ChannelMessage,
+  ChannelMessageAttachment,
+  ChannelSummary,
+  WorkspaceMemberSummary,
+} from '@/lib/api/types';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -134,7 +143,6 @@ function AboutTab({
         )}
       </div>
 
-      {/* Description */}
       <div>
         <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Description</div>
         <p className={`text-[13px] leading-[1.65] ${description === 'No description set' ? 'text-muted italic' : 'text-sub'}`}>
@@ -142,38 +150,33 @@ function AboutTab({
         </p>
       </div>
 
-      {/* Topic */}
       <div>
         <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Topic</div>
         <p className={`text-[13px] ${topic === 'No topic set' ? 'text-muted italic' : 'text-sub'}`}>{topic}</p>
       </div>
 
-      {/* Meta */}
       <div className="space-y-2.5">
-        <MetaRow icon="users" label="Members"  value={String(memberCount)} />
+        <MetaRow icon="users" label="Members" value={String(memberCount)} />
         <MetaRow icon={channel.type === 'PRIVATE' ? 'lock' : 'globe'} label="Privacy" value={privacyLabel} />
         <MetaRow icon="compose" label="Posting" value={postingLabel} />
         <MetaRow icon="hash" label="Created" value={formatChannelCreatedAt(channel.createdAt)} />
         <MetaRow icon="at" label="Created by" value={creatorLabel} />
       </div>
 
-      {canLeave && (
+      {canLeave ? (
         <div className="pt-1">
           <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Access</div>
-          <div className="rounded-md border border-line bg-panel p-3 space-y-3">
-            <p className="text-[12px] leading-[1.6] text-sub">
-              You are currently a member of this public channel. Leave it if you no longer want it in your sidebar.
-            </p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onLeave}
-              disabled={isLeaving}
-            >
-              {isLeaving ? 'Leaving…' : 'Leave channel'}
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onLeave}
+            disabled={isLeaving}
+          >
+            {isLeaving ? 'Leaving…' : 'Leave channel'}
+          </Button>
         </div>
+      ) : (
+        <div className="text-[13px] text-sub">You can&apos;t leave this channel.</div>
       )}
     </div>
   );
@@ -327,30 +330,105 @@ function MembersTab({
 
 // ── Files tab ────────────────────────────────────────────────────────
 
-const MOCK_FILES = [
-  { name: 'release-notes-v2.4.md', type: 'Markdown', size: '12 KB', from: 'Sarah', icon: 'folder' },
-  { name: 'thread-panel-spec.fig',  type: 'Figma',    size: '—',     from: 'Priya', icon: 'folder' },
-];
+interface SharedFileItem {
+  id: string;
+  attachment: ChannelMessageAttachment;
+  senderName: string;
+  createdAt: string;
+}
 
-function FilesTab() {
-  if (MOCK_FILES.length === 0) {
+function formatFileSize(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatFileDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown date';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+}
+
+function getFileKindLabel(attachment: ChannelMessageAttachment) {
+  const mime = attachment.contentType || attachment.mimeType || '';
+
+  if (mime.startsWith('image/')) {
+    return 'Image';
+  }
+
+  if (mime === 'application/pdf') {
+    return 'PDF';
+  }
+
+  if (mime.includes('video')) {
+    return 'Video';
+  }
+
+  if (mime.includes('audio')) {
+    return 'Audio';
+  }
+
+  return 'File';
+}
+
+function FilesTab({
+  files,
+  isLoading,
+  isError,
+  onRetry,
+}: {
+  files: SharedFileItem[];
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => void;
+}) {
+  if (isLoading) {
+    return <div className="px-4 py-10 text-center text-[13px] text-sub">Loading shared files…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="px-4 py-10 text-center text-[13px] text-sub space-y-3">
+        <div>We couldn&apos;t load shared files right now.</div>
+        <Button variant="secondary" size="sm" onClick={onRetry}>Retry</Button>
+      </div>
+    );
+  }
+
+  if (files.length === 0) {
     return <Empty icon="folder" text="No files shared yet" />;
   }
+
   return (
-    <div className="p-3 space-y-1">
-      {MOCK_FILES.map((f) => (
-        <div key={f.name} className="flex items-center gap-3 p-2.5 rounded-md hover:bg-elevated transition cursor-pointer">
-          <div className="w-8 h-8 rounded-md bg-elevated border border-divider flex items-center justify-center text-sub shrink-0">
-            <Icon name="folder" size={15} strokeWidth={1.5} />
+    <div className="p-3">
+      {files.map((file) => (
+        <a
+          key={file.id}
+          href={getUploadFileUrl(file.attachment.relativePath)}
+          target="_blank"
+          rel="noreferrer"
+          className="block border-b border-divider px-1 py-2 last:border-b-0 hover:bg-elevated/40 transition"
+        >
+          <div className="truncate text-[13px] text-ink">
+            {file.attachment.originalName}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] text-ink truncate font-medium">{f.name}</div>
-            <div className="text-[11px] text-muted mt-0.5">{f.type} · {f.size} · {f.from}</div>
+          <div className="mt-0.5 truncate text-[11px] text-muted">
+            {getFileKindLabel(file.attachment)} · {formatFileSize(file.attachment.size)} · {file.senderName} · {formatFileDate(file.createdAt)}
           </div>
-          <button className="text-muted hover:text-ink transition shrink-0">
-            <Icon name="arrowright" size={14} />
-          </button>
-        </div>
+        </a>
       ))}
     </div>
   );
@@ -358,8 +436,110 @@ function FilesTab() {
 
 // ── Pinned tab ───────────────────────────────────────────────────────
 
-function PinnedTab() {
-  return <Empty icon="pin" text="No pinned messages" sub="Pin important messages so the team can find them fast." />;
+function PinnedTab({
+  items,
+  isLoading,
+  isError,
+  isUnpinningMessageId,
+  onOpenProfile,
+  onRetry,
+  onUnpin,
+}: {
+  items: ChannelMessage[];
+  isLoading: boolean;
+  isError: boolean;
+  isUnpinningMessageId: string | null;
+  onOpenProfile: (id: string) => void;
+  onRetry: () => void;
+  onUnpin: (messageId: string) => void;
+}) {
+  function formatPinnedAt(value?: string | null) {
+    if (!value) {
+      return 'Pinned';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return 'Pinned';
+    }
+
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(date);
+  }
+
+  function getPinnedPreview(message: ChannelMessage) {
+    const content = message.content.trim();
+
+    if (content) {
+      return content;
+    }
+
+    const attachments = message.attachments ?? [];
+
+    if (attachments.length === 0) {
+      return 'No preview available';
+    }
+
+    if (attachments.length === 1) {
+      return attachments[0].originalName;
+    }
+
+    return `${attachments.length} attachments`;
+  }
+
+  if (isLoading) {
+    return <div className="px-4 py-10 text-center text-[13px] text-sub">Loading pinned messages…</div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="px-4 py-10 text-center text-[13px] text-sub space-y-3">
+        <div>We couldn&apos;t load pinned messages right now.</div>
+        <Button variant="secondary" size="sm" onClick={onRetry}>Retry</Button>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return <Empty icon="pin" text="No pinned messages" sub="Pin important messages so the team can find them fast." />;
+  }
+
+  return (
+    <div className="p-3">
+      {items.map((message) => (
+        <div key={message.id} className="border-b border-divider px-1 py-2 last:border-b-0">
+          <div className="line-clamp-3 text-[13px] text-ink">
+            {getPinnedPreview(message)}
+          </div>
+          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+            <button
+              type="button"
+              onClick={() => onOpenProfile(message.senderId)}
+              className="truncate hover:underline"
+            >
+              {message.sender.name}
+            </button>
+            <span>•</span>
+            <span className="truncate">{formatPinnedAt(message.pinnedAt)}</span>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => onUnpin(message.id)}
+              disabled={isUnpinningMessageId === message.id}
+              className="text-muted hover:text-ink transition disabled:opacity-40"
+            >
+              {isUnpinningMessageId === message.id ? 'Unpinning…' : 'Unpin'}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ── DM Profile tab ───────────────────────────────────────────────────
@@ -489,9 +669,58 @@ export default function ChannelInfoPanel({
   const tabs = isDm ? DM_TABS : CHANNEL_TABS;
   const [tab, setTab] = useState<string>(tabs[0]);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const pinnedMessagesQuery = useQuery({
+    queryKey: ['channel-pins', workspaceId, active.id],
+    queryFn: () => messagesApi.listPins(workspaceId, active.id),
+    enabled: !isDm && tab === 'Pinned',
+    staleTime: 15_000,
+  });
+  const sharedFilesQuery = useQuery({
+    queryKey: ['channel-files', workspaceId, active.id],
+    queryFn: async () => {
+      const collectedMessages: ChannelMessage[] = [];
+      let cursor: string | undefined;
+      let pagesLoaded = 0;
+
+      while (pagesLoaded < 10) {
+        const page = await messagesApi.list(workspaceId, active.id, {
+          cursor,
+          limit: 30,
+        });
+
+        collectedMessages.push(...page);
+        pagesLoaded += 1;
+
+        if (page.length < 30) {
+          break;
+        }
+
+        cursor = page[0]?.id;
+
+        if (!cursor) {
+          break;
+        }
+      }
+
+      return collectedMessages
+        .flatMap((message) => (
+          (message.attachments ?? []).map((attachment) => ({
+            id: `${message.id}:${attachment.relativePath}`,
+            attachment,
+            senderName: message.sender.name,
+            createdAt: message.createdAt,
+          }))
+        ))
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+    },
+    enabled: !isDm && tab === 'Files',
+    staleTime: 15_000,
+  });
   const leaveChannel = useMutation({
     mutationFn: () => channelsApi.leave(workspaceId, active.id),
     onSuccess: () => {
+      setConfirmLeaveOpen(false);
       queryClient.setQueryData<ChannelSummary[] | undefined>(
         ['channels', workspaceId],
         (current) => current?.map((item) => (
@@ -551,6 +780,25 @@ export default function ChannelInfoPanel({
       toast.error(getChannelErrorMessage(error));
     },
   });
+  const unpinMessage = useMutation({
+    mutationFn: (messageId: string) => messagesApi.unpin(workspaceId, active.id, messageId),
+    onSuccess: (message) => {
+      queryClient.setQueryData<ChannelMessage[] | undefined>(
+        ['channel-pins', workspaceId, active.id],
+        (current) => current?.filter((item) => item.id !== message.id) ?? [],
+      );
+      queryClient.setQueryData<ChannelSummary[] | undefined>(
+        ['channels', workspaceId],
+        (current) => current,
+      );
+      void queryClient.invalidateQueries({ queryKey: ['channel-pins', workspaceId, active.id] });
+      void queryClient.invalidateQueries({ queryKey: ['channel-messages', workspaceId, active.id] });
+      toast.success('Message unpinned');
+    },
+    onError: (error) => {
+      toast.error(getMessageErrorMessage(error));
+    },
+  });
 
   return (
     <>
@@ -604,7 +852,7 @@ export default function ChannelInfoPanel({
                 memberCount={channelMemberCount}
                 isLeaving={leaveChannel.isPending}
                 onEdit={() => setEditModalOpen(true)}
-                onLeave={() => leaveChannel.mutate()}
+                onLeave={() => setConfirmLeaveOpen(true)}
               />
             ) : (
               <div className="px-4 py-10 text-center text-[13px] text-sub">
@@ -627,8 +875,25 @@ export default function ChannelInfoPanel({
               onOpenProfile={onOpenProfile}
             />
           )}
-          {tab === 'Files'            && <FilesTab />}
-          {tab === 'Pinned'           && <PinnedTab />}
+          {tab === 'Files'            && (
+            <FilesTab
+              files={sharedFilesQuery.data ?? []}
+              isLoading={sharedFilesQuery.isLoading}
+              isError={sharedFilesQuery.isError}
+              onRetry={() => void sharedFilesQuery.refetch()}
+            />
+          )}
+          {tab === 'Pinned'           && (
+            <PinnedTab
+              items={pinnedMessagesQuery.data ?? []}
+              isLoading={pinnedMessagesQuery.isLoading}
+              isError={pinnedMessagesQuery.isError}
+              isUnpinningMessageId={unpinMessage.isPending ? unpinMessage.variables ?? null : null}
+              onOpenProfile={onOpenProfile}
+              onRetry={() => void pinnedMessagesQuery.refetch()}
+              onUnpin={(messageId) => unpinMessage.mutate(messageId)}
+            />
+          )}
           {isDm  && tab === 'Profile' && <DmProfileTab userId={active.id} onOpenProfile={onOpenProfile} />}
         </div>
       </aside>
@@ -643,6 +908,21 @@ export default function ChannelInfoPanel({
             onClose();
             onChannelDeleted(nextChannelId);
           }}
+        />
+      )}
+
+      {!isDm && (
+        <ConfirmDialog
+          open={confirmLeaveOpen}
+          title="Leave this channel?"
+          description={`You will stop seeing #${channelName} in your sidebar unless you join it again.`}
+          warning="This will continue immediately after you confirm."
+          confirmLabel="Leave channel"
+          icon="logout"
+          tone="danger"
+          isPending={leaveChannel.isPending}
+          onConfirm={() => leaveChannel.mutate()}
+          onClose={() => setConfirmLeaveOpen(false)}
         />
       )}
     </>

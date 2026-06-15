@@ -84,7 +84,10 @@ const MESSAGE_MESSAGES: Record<string, string> = {
   MESSAGES_MESSAGE_CONTENT_REQUIRED:  'Message content cannot be empty.',
   MESSAGES_MESSAGE_DELETE_FORBIDDEN:  'You can only delete your own messages.',
   MESSAGES_MESSAGE_EDIT_FORBIDDEN:    'You can only edit your own messages.',
+  MESSAGES_MESSAGE_ALREADY_PINNED:    'This message is already pinned.',
   MESSAGES_MESSAGE_NOT_FOUND:         'This message could not be found.',
+  MESSAGES_MESSAGE_NOT_PINNED:        'This message is not pinned.',
+  MESSAGES_PIN_FORBIDDEN:             'You do not have permission to pin messages in this channel.',
   MESSAGES_READ_ONLY_CHANNEL:         'This channel is read-only for your role.',
 };
 

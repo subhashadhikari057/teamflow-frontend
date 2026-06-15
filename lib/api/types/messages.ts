@@ -17,6 +17,13 @@ export interface ChannelMessageSender {
   avatarUrl?: string | null;
 }
 
+export interface ChannelMessagePinnedBy {
+  id: string;
+  name: string;
+  username: string;
+  avatarUrl?: string | null;
+}
+
 export interface ChannelMessage {
   id: string;
   channelId: string;
@@ -24,6 +31,9 @@ export interface ChannelMessage {
   senderId: string;
   sender: ChannelMessageSender;
   attachments?: ChannelMessageAttachment[];
+  isPinned?: boolean;
+  pinnedAt?: string | null;
+  pinnedBy?: ChannelMessagePinnedBy | null;
   createdAt: string;
   editedAt?: string | null;
   isEdited: boolean;
@@ -41,6 +51,16 @@ export interface SendChannelMessagePayload {
 
 export interface UpdateChannelMessagePayload {
   content: string;
+}
+
+export interface ChannelMessagePinResponse {
+  success: boolean;
+  data: ChannelMessage;
+}
+
+export interface ListPinnedChannelMessagesResponse {
+  success: boolean;
+  data: ChannelMessage[];
 }
 
 export type DeleteChannelMessageResponse = ActionResponse;

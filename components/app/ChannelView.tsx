@@ -10,6 +10,7 @@ import Badge from '@/components/primitives/Badge';
 import Button from '@/components/primitives/Button';
 import MessageBody from './MessageBody';
 import Composer from './Composer';
+import PinnedMessageBanner from './PinnedMessageBanner';
 import { CHANNELS, ENG_MESSAGES, USERS } from '@/lib/data';
 import { authApi } from '@/lib/api/auth';
 import { channelsApi } from '@/lib/api/channels';
@@ -66,6 +67,9 @@ interface UiMessage {
   time: string;
   body: string;
   attachments: NonNullable<ChannelMessage['attachments']>;
+  isPinned: boolean;
+  pinnedAt?: string | null;
+  pinnedBy?: ChannelMessage['pinnedBy'];
   reactions: Message['reactions'];
   edited?: boolean;
   thread?: Message['thread'];
@@ -103,6 +107,9 @@ function mapApiMessage(message: ChannelMessage): UiMessage {
     time: formatMessageTime(message.createdAt),
     body: message.content,
     attachments: message.attachments ?? [],
+    isPinned: message.isPinned ?? false,
+    pinnedAt: message.pinnedAt ?? null,
+    pinnedBy: message.pinnedBy ?? null,
     reactions: [],
     edited: message.isEdited,
     createdAt: message.createdAt,
@@ -146,6 +153,9 @@ function mapMockMessage(message: Message): UiMessage {
     time: message.time,
     body: message.body,
     attachments: [],
+    isPinned: false,
+    pinnedAt: null,
+    pinnedBy: null,
     reactions: message.reactions,
     thread: message.thread,
     edited: message.edited,
@@ -251,17 +261,21 @@ function MessageAvatar({
 function MessageRow({
   m,
   currentUserId,
+  isJumpTarget,
   onDelete,
   onEdit,
   onOpenThread,
   onOpenProfile,
+  onTogglePin,
 }: {
   m: UiMessage;
   currentUserId?: string;
+  isJumpTarget?: boolean;
   onDelete: (messageId: string) => void;
   onEdit: (message: UiMessage) => void;
   onOpenThread: (id: string) => void;
   onOpenProfile: (id: string) => void;
+  onTogglePin: (message: UiMessage) => void;
 }) {
   const [hover, setHover] = useState(false);
   const { density } = useAppearance();
@@ -436,6 +450,17 @@ function MessageRow({
       >
         <Icon name="cornerreply" size={15} />
       </button>
+      <button
+        onClick={() => onTogglePin(m)}
+        className={`w-8 h-8 flex items-center justify-center transition border-l border-divider ${
+          m.isPinned
+            ? 'text-white hover:bg-elevated'
+            : 'text-sub hover:text-ink hover:bg-elevated'
+        }`}
+        title={m.isPinned ? 'Unpin message' : 'Pin message'}
+      >
+        <Icon name="pin" size={14} />
+      </button>
       {isMine && (
         <>
           <button
@@ -459,7 +484,11 @@ function MessageRow({
     return (
       <div
         data-message-id={m.id}
-        className={`group relative flex items-baseline gap-2 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
+        className={`group relative flex items-baseline gap-2 px-5 ${rowPy} rounded transition ${
+          isJumpTarget
+            ? 'bg-emerald-500/12 ring-1 ring-emerald-400/40'
+            : 'hover:bg-[#0c0c0c]'
+        } ${m.isPinned ? 'border-l-2 border-white/60 pl-[18px]' : ''} ${m.isPinned && !isJumpTarget ? 'bg-white/[0.03]' : ''}`}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
       >
@@ -471,6 +500,12 @@ function MessageRow({
           {m.senderName}
         </button>
         <div className="min-w-0 flex-1" style={{ fontSize: 'var(--fs, 14px)' }}>
+          {m.isPinned && (
+            <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-sub">
+              <Icon name="pin" size={10} className="text-ink" />
+              Pinned
+            </div>
+          )}
           <MessageBody body={m.body} />
           {extras}
         </div>
@@ -482,7 +517,11 @@ function MessageRow({
   return (
     <div
       data-message-id={m.id}
-      className={`group relative flex gap-3 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
+      className={`group relative flex gap-3 px-5 ${rowPy} rounded transition ${
+        isJumpTarget
+          ? 'bg-emerald-500/12 ring-1 ring-emerald-400/40'
+          : 'hover:bg-[#0c0c0c]'
+      } ${m.isPinned ? 'border-l-2 border-white/60 pl-[18px]' : ''} ${m.isPinned && !isJumpTarget ? 'bg-white/[0.03]' : ''}`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -504,8 +543,20 @@ function MessageRow({
             {m.senderName}
           </button>
           <span className="text-[11px] text-muted">{m.time}</span>
+          {m.isPinned && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-sub">
+              <Icon name="pin" size={11} className="text-ink" />
+              Pinned
+            </span>
+          )}
           {m.edited && <span className="text-[11px] text-muted">(edited)</span>}
         </div>
+        {m.isPinned && (
+          <div className="mt-1 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-sub">
+            <Icon name="pin" size={10} className="text-ink" />
+            Pinned message
+          </div>
+        )}
         <div className="mt-0.5" style={{ fontSize: 'var(--fs, 14px)' }}>
           <MessageBody body={m.body} />
         </div>
@@ -592,6 +643,7 @@ function ConversationPane({
   joinedChannelIds,
   composerLabel,
   currentUserId,
+  highlightedMessageId,
   isDm,
   isReadOnly,
   isPrivileged,
@@ -610,6 +662,7 @@ function ConversationPane({
   joinedChannelIds: string[];
   composerLabel: string;
   currentUserId?: string;
+  highlightedMessageId?: string | null;
   isDm: boolean;
   isReadOnly: boolean;
   isPrivileged: boolean;
@@ -707,6 +760,24 @@ function ConversationPane({
     mutationFn: (files: File[]) => uploadImages(files, false),
     onError: () => {
       toast.error('Failed to upload attachments. Please try again.');
+    },
+  });
+  const togglePinMessage = useMutation({
+    mutationFn: async (message: ChannelMessage) => {
+      return message.isPinned
+        ? await messagesApi.unpin(workspaceId, channelId as string, message.id)
+        : await messagesApi.pin(workspaceId, channelId as string, message.id);
+    },
+    onSuccess: (message) => {
+      queryClient.setQueryData(
+        ['channel-messages', workspaceId, channelId],
+        (current: ChannelMessagesData | undefined) => upsertMessageInPages(current, message),
+      );
+      void queryClient.invalidateQueries({ queryKey: ['channel-pins', workspaceId, channelId] });
+      toast.success(message.isPinned ? 'Message pinned' : 'Message unpinned');
+    },
+    onError: (error) => {
+      toast.error(getMessageErrorMessage(error));
     },
   });
 
@@ -1049,6 +1120,7 @@ function ConversationPane({
 
         updateRealtimeMessage(message);
         updateChannelPreview(message);
+        void queryClient.invalidateQueries({ queryKey: ['channel-pins', workspaceId, channelId] });
       };
 
       const handleDeleted = ({ channelId: incomingChannelId, messageId }: MessageDeletedPayload) => {
@@ -1057,6 +1129,7 @@ function ConversationPane({
         }
 
         removeRealtimeMessage(messageId);
+        void queryClient.invalidateQueries({ queryKey: ['channel-pins', workspaceId, channelId] });
         void queryClient.invalidateQueries({ queryKey: ['channels', workspaceId] });
       };
 
@@ -1207,109 +1280,137 @@ function ConversationPane({
 
   return (
     <>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
-        {!isDm && (
-          <div className="px-5 pb-4 mb-2">
-            <div>
-              <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
-                <Icon name="hash" size={22} />
-              </div>
-              <h2 className="text-[22px] font-bold tracking-tightest text-ink">
-                Welcome to #{channelName}
-              </h2>
-              <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
-            </div>
-          </div>
-        )}
-
-        {canJoinPublicChannel && (
-          <div className="px-5">
-            <div className="max-w-[420px] rounded-xl border border-line bg-panel px-5 py-6">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 rounded-lg bg-elevated border border-line flex items-center justify-center text-sub shrink-0">
-                  <Icon name="globe" size={18} />
+      <div className="flex-1 min-h-0">
+        <div ref={scrollRef} className="flex-1 h-full overflow-y-auto py-4">
+          {!isDm && (
+            <div className="px-5 pb-4 mb-2">
+              <div>
+                <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
+                  <Icon name="hash" size={22} />
                 </div>
-                <div>
-                  <div className="text-[15px] font-semibold text-ink">Join #{channelName}</div>
-                  <p className="text-[13px] text-sub mt-1">
-                    This is a public channel. Join it to read the conversation and participate.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4">
-                <Button onClick={() => joinChannel.mutate()} disabled={joinChannel.isPending}>
-                  {joinChannel.isPending ? 'Joining…' : 'Join channel'}
-                </Button>
+                <h2 className="text-[22px] font-bold tracking-tightest text-ink">
+                  Welcome to #{channelName}
+                </h2>
+                <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {!canJoinPublicChannel && !isDm && canLoadOlder && (
-          <div className="px-5 pb-4">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void channelMessagesQuery.fetchNextPage()}
-              disabled={channelMessagesQuery.isFetchingNextPage}
-            >
-              {channelMessagesQuery.isFetchingNextPage ? 'Loading…' : 'Load older messages'}
-            </Button>
-          </div>
-        )}
+          {canJoinPublicChannel && (
+            <div className="px-5">
+              <div className="max-w-[420px] rounded-xl border border-line bg-panel px-5 py-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-elevated border border-line flex items-center justify-center text-sub shrink-0">
+                    <Icon name="globe" size={18} />
+                  </div>
+                  <div>
+                    <div className="text-[15px] font-semibold text-ink">Join #{channelName}</div>
+                    <p className="text-[13px] text-sub mt-1">
+                      This is a public channel. Join it to read the conversation and participate.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <Button onClick={() => joinChannel.mutate()} disabled={joinChannel.isPending}>
+                    {joinChannel.isPending ? 'Joining…' : 'Join channel'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
-        {!canJoinPublicChannel && !isDm && channelMessagesQuery.isLoading && (
-          <div className="px-5 py-10 text-[13px] text-sub">Loading messages…</div>
-        )}
+          {!canJoinPublicChannel && !isDm && canLoadOlder && (
+            <div className="px-5 pb-4">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void channelMessagesQuery.fetchNextPage()}
+                disabled={channelMessagesQuery.isFetchingNextPage}
+              >
+                {channelMessagesQuery.isFetchingNextPage ? 'Loading…' : 'Load older messages'}
+              </Button>
+            </div>
+          )}
 
-        {!canJoinPublicChannel && !isDm && channelMessagesQuery.isError && (
-          <div className="px-5 py-10 flex items-center gap-3">
-            <span className="text-[13px] text-sub">We couldn&apos;t load channel messages.</span>
-            <Button variant="secondary" size="sm" onClick={() => void channelMessagesQuery.refetch()}>
-              Retry
-            </Button>
-          </div>
-        )}
+          {!canJoinPublicChannel && !isDm && channelMessagesQuery.isLoading && (
+            <div className="px-5 py-10 text-[13px] text-sub">Loading messages…</div>
+          )}
 
-        {!canJoinPublicChannel && (!isDm ? !channelMessagesQuery.isLoading && !channelMessagesQuery.isError : true) && (
-          <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
-            {messages.map((m) => (
-              <MessageRow
+          {!canJoinPublicChannel && !isDm && channelMessagesQuery.isError && (
+            <div className="px-5 py-10 flex items-center gap-3">
+              <span className="text-[13px] text-sub">We couldn&apos;t load channel messages.</span>
+              <Button variant="secondary" size="sm" onClick={() => void channelMessagesQuery.refetch()}>
+                Retry
+              </Button>
+            </div>
+          )}
+
+          {!canJoinPublicChannel && (!isDm ? !channelMessagesQuery.isLoading && !channelMessagesQuery.isError : true) && (
+            <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
+              {messages.map((m) => (
+                <MessageRow
                 key={m.id}
                 m={m}
                 currentUserId={currentUserId}
+                isJumpTarget={highlightedMessageId === m.id}
                 onDelete={(messageId) => deleteMessage.mutate(messageId)}
                 onEdit={(message) => setEditing({ messageId: message.id, body: message.body })}
                 onOpenThread={openThread}
-                onOpenProfile={openProfile}
-              />
-            ))}
-          </div>
-        )}
+                  onOpenProfile={openProfile}
+                  onTogglePin={(message) => {
+                    if (isDm) {
+                      return;
+                    }
 
-        {!canJoinPublicChannel && !isDm && !channelMessagesQuery.isLoading && !channelMessagesQuery.isError && messages.length === 0 && (
-          <div className="px-5 py-10 text-[13px] text-sub">No messages yet. Start the conversation.</div>
-        )}
+                    togglePinMessage.mutate({
+                      id: message.id,
+                      channelId: channelId as string,
+                      content: message.body,
+                      senderId: message.userId,
+                      sender: {
+                        id: message.userId,
+                        name: message.senderName,
+                        username: message.senderUsername,
+                        avatarUrl: message.senderAvatarUrl,
+                      },
+                      attachments: message.attachments,
+                      isPinned: message.isPinned,
+                      pinnedAt: message.pinnedAt,
+                      pinnedBy: message.pinnedBy,
+                      createdAt: message.createdAt ?? new Date().toISOString(),
+                      isEdited: Boolean(message.edited),
+                      editedAt: null,
+                    });
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
-        {!canJoinPublicChannel && typingNames.length > 0 && (
-          <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
-            {firstTypingUserId && USERS[firstTypingUserId] ? (
-              <Avatar userId={firstTypingUserId} size={22} presence={false} />
-            ) : (
-              <div className="w-[22px] h-[22px] rounded-md bg-elevated border border-line flex items-center justify-center text-muted shrink-0">
-                <Icon name="compose" size={11} />
-              </div>
-            )}
-            <span>
-              {typingNames.length === 1
-                ? `${typingNames[0]} is typing`
-                : typingNames.length === 2
-                  ? `${typingNames[0]} and ${typingNames[1]} are typing`
-                  : `${typingNames.length} people are typing`}
-              <span>.</span><span>.</span><span>.</span>
-            </span>
-          </div>
-        )}
+          {!canJoinPublicChannel && !isDm && !channelMessagesQuery.isLoading && !channelMessagesQuery.isError && messages.length === 0 && (
+            <div className="px-5 py-10 text-[13px] text-sub">No messages yet. Start the conversation.</div>
+          )}
+
+          {!canJoinPublicChannel && typingNames.length > 0 && (
+            <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
+              {firstTypingUserId && USERS[firstTypingUserId] ? (
+                <Avatar userId={firstTypingUserId} size={22} presence={false} />
+              ) : (
+                <div className="w-[22px] h-[22px] rounded-md bg-elevated border border-line flex items-center justify-center text-muted shrink-0">
+                  <Icon name="compose" size={11} />
+                </div>
+              )}
+              <span>
+                {typingNames.length === 1
+                  ? `${typingNames[0]} is typing`
+                  : typingNames.length === 2
+                    ? `${typingNames[0]} and ${typingNames[1]} are typing`
+                    : `${typingNames.length} people are typing`}
+                <span>.</span><span>.</span><span>.</span>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {!composerHidden && (
@@ -1343,6 +1444,7 @@ export default function ChannelView({
   infoOpen,
 }: ChannelViewProps) {
   const me = useCurrentUser();
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const isDm = active.type === 'dm';
   const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
   const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
@@ -1362,6 +1464,20 @@ export default function ChannelView({
   const headerMembers = channelMembers.slice(0, 4);
   const headerMemberCount = channelMembers.length || channelMemberCount;
   const dmUser = isDm ? USERS[active.id] : null;
+  const pinnedMessagesQuery = useQuery({
+    queryKey: ['channel-pins', workspaceId, apiChannel?.id],
+    queryFn: () => messagesApi.listPins(workspaceId, apiChannel!.id),
+    enabled: !isDm && Boolean(apiChannel?.id) && Boolean(apiChannel?.isMember),
+    staleTime: 15_000,
+  });
+  const pinnedMessages = pinnedMessagesQuery.data ?? [];
+  const featuredPinnedMessage = pinnedMessages
+    .slice()
+    .sort((left, right) => {
+      const rightTime = new Date(right.pinnedAt ?? right.createdAt).getTime();
+      const leftTime = new Date(left.pinnedAt ?? left.createdAt).getTime();
+      return rightTime - leftTime;
+    })[0] ?? null;
   const conversationKey = isDm
     ? `dm:${active.id}`
     : `channel:${apiChannel?.id ?? fallbackChannel?.id ?? active.id}`;
@@ -1378,6 +1494,33 @@ export default function ChannelView({
   );
   const isReadOnly = Boolean(apiChannel?.isReadOnly);
   const isPrivileged = isPrivilegedRole(me?.currentWorkspace?.role);
+
+  function handlePinnedBannerClick() {
+    if (!featuredPinnedMessage?.id) {
+      return;
+    }
+
+    const selector = typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+      ? `[data-message-id="${CSS.escape(featuredPinnedMessage.id)}"]`
+      : `[data-message-id="${featuredPinnedMessage.id}"]`;
+    const messageNode = document.querySelector<HTMLElement>(selector);
+
+    if (!messageNode) {
+      return;
+    }
+
+    setHighlightedMessageId(featuredPinnedMessage.id);
+    messageNode.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+
+    window.setTimeout(() => {
+      setHighlightedMessageId((current) => (
+        current === featuredPinnedMessage.id ? null : current
+      ));
+    }, 1800);
+  }
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-bg">
@@ -1473,6 +1616,14 @@ export default function ChannelView({
         </div>
       </div>
 
+      {!isDm && apiChannel?.isMember && featuredPinnedMessage && (
+        <PinnedMessageBanner
+          message={featuredPinnedMessage}
+          pinnedCount={pinnedMessages.length}
+          onClick={handlePinnedBannerClick}
+        />
+      )}
+
       <ConversationPane
         key={conversationKey}
         channelId={apiChannel?.id}
@@ -1485,6 +1636,7 @@ export default function ChannelView({
         joinedChannelIds={realtimeChannelIds}
         composerLabel={isDm ? dmUser!.name : `#${channelName}`}
         currentUserId={me?.id}
+        highlightedMessageId={highlightedMessageId}
         isDm={isDm}
         isReadOnly={isReadOnly}
         isPrivileged={isPrivileged}
