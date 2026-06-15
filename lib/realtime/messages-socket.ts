@@ -36,6 +36,11 @@ export interface ChannelMetaUpdatedPayload extends ChannelRoomPayload {
   } | null;
 }
 
+export interface TypingPayload extends ChannelRoomPayload {
+  userId: string;
+  username: string;
+}
+
 export function createMessagesSocket(token: string): Socket {
   return io(MESSAGES_SOCKET_URL, {
     auth: {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from '@/components/primitives/Icon';
 import Tooltip from '@/components/primitives/Tooltip';
 
@@ -15,6 +15,8 @@ interface ComposerProps {
   disabledMessage?: string;
   initialText?: string;
   onSend: (text: string) => void;
+  onTypingStart?: () => void;
+  onTypingStop?: () => void;
   onRequestEditLastMessage?: () => void;
   editing: EditingState | null;
   setEditing: (e: EditingState | null) => void;
@@ -35,6 +37,8 @@ export default function Composer({
   disabledMessage,
   initialText = '',
   onSend,
+  onTypingStart,
+  onTypingStop,
   onRequestEditLastMessage,
   editing,
   setEditing,
@@ -42,15 +46,81 @@ export default function Composer({
   const [text, setText] = useState(initialText);
   const ref = useRef<HTMLTextAreaElement>(null);
   const editingMessageId = editing?.messageId ?? null;
+  const isTypingRef = useRef(false);
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (disabled || !ref.current) {
+      return;
+    }
+
+    ref.current.focus();
+  }, [disabled, editingMessageId]);
+
+  useEffect(() => {
+    const hasText = text.trim().length > 0;
+
+    if (disabled || !hasText) {
+      if (isTypingRef.current) {
+        onTypingStop?.();
+        isTypingRef.current = false;
+      }
+
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+
+      return;
+    }
+
+    if (!isTypingRef.current) {
+      onTypingStart?.();
+      isTypingRef.current = true;
+    }
+
+    if (!typingIntervalRef.current) {
+      typingIntervalRef.current = setInterval(() => {
+        onTypingStart?.();
+      }, 2500);
+    }
+
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+    };
+  }, [disabled, onTypingStart, onTypingStop, text]);
+
+  useEffect(() => () => {
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+    }
+    if (isTypingRef.current) {
+      onTypingStop?.();
+      isTypingRef.current = false;
+    }
+  }, [onTypingStop]);
 
   const send = () => {
     if (disabled) return;
     const t = text.trim();
     if (!t) return;
+    if (isTypingRef.current) {
+      onTypingStop?.();
+      isTypingRef.current = false;
+    }
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
     onSend(t);
     setText('');
     setEditing(null);
-    if (ref.current) { ref.current.style.height = 'auto'; }
+    if (ref.current) {
+      ref.current.style.height = 'auto';
+    }
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -61,6 +131,10 @@ export default function Composer({
       e.preventDefault();
       onRequestEditLastMessage?.();
     } else if (e.key === 'Escape' && editing) {
+      if (isTypingRef.current) {
+        onTypingStop?.();
+        isTypingRef.current = false;
+      }
       setEditing(null);
       setText('');
     }
@@ -106,12 +180,28 @@ export default function Composer({
         </div>
 
         <textarea
-          autoFocus={Boolean(editingMessageId)}
+          autoFocus={!disabled}
           ref={ref}
           rows={1}
           value={text}
           disabled={disabled}
           onChange={(e) => { setText(e.target.value); autoResize(e.target); }}
+          onFocus={() => {
+            if (!disabled && text.trim() && !isTypingRef.current) {
+              onTypingStart?.();
+              isTypingRef.current = true;
+            }
+          }}
+          onBlur={() => {
+            if (isTypingRef.current) {
+              onTypingStop?.();
+              isTypingRef.current = false;
+            }
+            if (typingIntervalRef.current) {
+              clearInterval(typingIntervalRef.current);
+              typingIntervalRef.current = null;
+            }
+          }}
           onKeyDown={onKeyDown}
           placeholder={disabled ? (disabledMessage ?? `You can’t message ${channelName}`) : `Message ${channelName}`}
           className="w-full bg-transparent resize-none px-3 py-2.5 text-[15px] text-ink placeholder:text-muted outline-none leading-[1.5] disabled:cursor-not-allowed disabled:text-sub"

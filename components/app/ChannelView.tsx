@@ -1,7 +1,7 @@
 'use client';
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCurrentUser } from '@/hooks/auth';
 import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
@@ -23,6 +23,7 @@ import {
   type MessageCreatedPayload,
   type MessageDeletedPayload,
   type MessageUpdatedPayload,
+  type TypingPayload,
 } from '@/lib/realtime/messages-socket';
 import { useToast } from '@/lib/toast-context';
 import type { ChannelMemberSummary, ChannelMessage, ChannelSummary, WorkspaceRole } from '@/lib/api/types';
@@ -58,6 +59,7 @@ interface UiMessage {
   reactions: Message['reactions'];
   edited?: boolean;
   thread?: Message['thread'];
+  createdAt?: string;
 }
 
 interface EditingState {
@@ -92,6 +94,7 @@ function mapApiMessage(message: ChannelMessage): UiMessage {
     body: message.content,
     reactions: [],
     edited: message.isEdited,
+    createdAt: message.createdAt,
   };
 }
 
@@ -134,6 +137,7 @@ function mapMockMessage(message: Message): UiMessage {
     reactions: message.reactions,
     thread: message.thread,
     edited: message.edited,
+    createdAt: undefined,
   };
 }
 
@@ -289,6 +293,7 @@ function MessageRow({
   if (isCozy) {
     return (
       <div
+        data-message-id={m.id}
         className={`group relative flex items-baseline gap-2 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
@@ -311,6 +316,7 @@ function MessageRow({
 
   return (
     <div
+      data-message-id={m.id}
       className={`group relative flex gap-3 px-5 ${rowPy} hover:bg-[#0c0c0c] transition rounded`}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -414,6 +420,7 @@ function ConversationPane({
   channelId,
   channelIntro,
   channelName,
+  channelLastReadAt,
   channelUnreadCount,
   joinedChannelIds,
   composerLabel,
@@ -424,12 +431,12 @@ function ConversationPane({
   openProfile,
   openThread,
   seedMessages,
-  showTyping,
   workspaceId,
 }: {
   channelId?: string;
   channelIntro: string;
   channelName: string;
+  channelLastReadAt?: string | null;
   channelUnreadCount: number;
   joinedChannelIds: string[];
   composerLabel: string;
@@ -440,13 +447,17 @@ function ConversationPane({
   openProfile: (userId: string) => void;
   openThread: (id: string) => void;
   seedMessages: Message[];
-  showTyping: boolean;
   workspaceId: string;
 }) {
   const { density } = useAppearance();
   const queryClient = useQueryClient();
   const toast = useToast();
   const [editing, setEditing] = useState<EditingState | null>(null);
+  const [typers, setTypers] = useState<Record<string, string>>({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<ReturnType<typeof createMessagesSocket> | null>(null);
+  const hasInitialPositionedRef = useRef(false);
+  const previousMessageCountRef = useRef(0);
 
   const channelMessagesQuery = useInfiniteQuery({
     queryKey: ['channel-messages', workspaceId, channelId],
@@ -575,6 +586,65 @@ function ConversationPane({
   const isBusy = sendMessage.isPending || updateMessage.isPending || deleteMessage.isPending;
   const composerHidden = !isDm && isReadOnly && !isPrivileged;
   const joinedChannelIdsKey = joinedChannelIds.join(',');
+  const typingNames = Object.values(typers);
+  const firstTypingUserId = Object.keys(typers)[0];
+
+  useEffect(() => {
+    hasInitialPositionedRef.current = false;
+    previousMessageCountRef.current = 0;
+  }, [channelId]);
+
+  useEffect(() => {
+    if (!scrollRef.current || messages.length === 0) {
+      return;
+    }
+
+    const container = scrollRef.current;
+    const previousMessageCount = previousMessageCountRef.current;
+    const nextMessageCount = messages.length;
+
+    if (!hasInitialPositionedRef.current) {
+      hasInitialPositionedRef.current = true;
+      previousMessageCountRef.current = nextMessageCount;
+
+      if (channelUnreadCount > 0 && channelLastReadAt) {
+        const lastReadAtTime = new Date(channelLastReadAt).getTime();
+        const firstUnreadMessage = messages.find((message) => {
+          if (!message.createdAt) {
+            return false;
+          }
+
+          const createdAtTime = new Date(message.createdAt).getTime();
+          return !Number.isNaN(createdAtTime) && createdAtTime > lastReadAtTime;
+        });
+
+        if (firstUnreadMessage) {
+          const unreadNode = container.querySelector<HTMLElement>(`[data-message-id="${firstUnreadMessage.id}"]`);
+
+          if (unreadNode) {
+            unreadNode.scrollIntoView({ block: 'center' });
+            return;
+          }
+        }
+      }
+
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+
+    previousMessageCountRef.current = nextMessageCount;
+
+    if (channelMessagesQuery.isFetchingNextPage) {
+      return;
+    }
+
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    const newMessagesAppended = nextMessageCount > previousMessageCount;
+
+    if (isNearBottom || newMessagesAppended) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, [channelLastReadAt, channelMessagesQuery.isFetchingNextPage, channelUnreadCount, messages]);
 
   useEffect(() => {
     if (
@@ -616,6 +686,7 @@ function ConversationPane({
       }
 
       const socket = createMessagesSocket(token);
+      socketRef.current = socket;
 
       const appendRealtimeMessage = (message: ChannelMessage) => {
         queryClient.setQueryData(
@@ -775,10 +846,43 @@ function ConversationPane({
         updateChannelMeta(payload);
       };
 
+      const handleTypingStart = (payload: TypingPayload) => {
+        if (
+          payload.workspaceId !== workspaceId
+          || payload.channelId !== channelId
+          || payload.userId === currentUserId
+        ) {
+          return;
+        }
+
+        setTypers((current) => ({
+          ...current,
+          [payload.userId]: payload.username,
+        }));
+      };
+
+      const handleTypingStop = (payload: TypingPayload) => {
+        if (payload.workspaceId !== workspaceId || payload.channelId !== channelId) {
+          return;
+        }
+
+        setTypers((current) => {
+          if (!current[payload.userId]) {
+            return current;
+          }
+
+          const next = { ...current };
+          delete next[payload.userId];
+          return next;
+        });
+      };
+
       socket.on('message.created', handleCreated);
       socket.on('message.updated', handleUpdated);
       socket.on('message.deleted', handleDeleted);
       socket.on('channel.meta.updated', handleChannelMetaUpdated);
+      socket.on('typing.start', handleTypingStart);
+      socket.on('typing.stop', handleTypingStop);
 
       joinedChannelIds.forEach((joinedChannelId) => {
         socket.emit('channel.join', {
@@ -798,7 +902,10 @@ function ConversationPane({
         socket.off('message.updated', handleUpdated);
         socket.off('message.deleted', handleDeleted);
         socket.off('channel.meta.updated', handleChannelMetaUpdated);
+        socket.off('typing.start', handleTypingStart);
+        socket.off('typing.stop', handleTypingStop);
         socket.disconnect();
+        socketRef.current = null;
       };
     }
 
@@ -807,6 +914,7 @@ function ConversationPane({
     return () => {
       active = false;
       socketCleanup?.();
+      socketRef.current = null;
     };
   }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, workspaceId]);
 
@@ -821,6 +929,28 @@ function ConversationPane({
     }
 
     sendMessage.mutate(text);
+  }
+
+  function emitTypingStart() {
+    if (isDm || !channelId || !socketRef.current) {
+      return;
+    }
+
+    socketRef.current.emit('typing.start', {
+      workspaceId,
+      channelId,
+    });
+  }
+
+  function emitTypingStop() {
+    if (isDm || !channelId || !socketRef.current) {
+      return;
+    }
+
+    socketRef.current.emit('typing.stop', {
+      workspaceId,
+      channelId,
+    });
   }
 
   function requestEditLastMessage() {
@@ -838,7 +968,7 @@ function ConversationPane({
 
   return (
     <>
-      <div className="flex-1 overflow-y-auto py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
         {!isDm && (
           <div className="px-5 pb-4 mb-2">
             <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
@@ -897,10 +1027,23 @@ function ConversationPane({
           <div className="px-5 py-10 text-[13px] text-sub">No messages yet. Start the conversation.</div>
         )}
 
-        {showTyping && (
+        {typingNames.length > 0 && (
           <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
-            <Avatar userId="sarah" size={22} presence={false} />
-            <span>Sarah is typing<span>.</span><span>.</span><span>.</span></span>
+            {firstTypingUserId && USERS[firstTypingUserId] ? (
+              <Avatar userId={firstTypingUserId} size={22} presence={false} />
+            ) : (
+              <div className="w-[22px] h-[22px] rounded-md bg-elevated border border-line flex items-center justify-center text-muted shrink-0">
+                <Icon name="compose" size={11} />
+              </div>
+            )}
+            <span>
+              {typingNames.length === 1
+                ? `${typingNames[0]} is typing`
+                : typingNames.length === 2
+                  ? `${typingNames[0]} and ${typingNames[1]} are typing`
+                  : `${typingNames.length} people are typing`}
+              <span>.</span><span>.</span><span>.</span>
+            </span>
           </div>
         )}
       </div>
@@ -912,6 +1055,8 @@ function ConversationPane({
           disabled={isBusy}
           initialText={editing?.body ?? ''}
           onSend={handleSend}
+          onTypingStart={emitTypingStart}
+          onTypingStop={emitTypingStop}
           onRequestEditLastMessage={requestEditLastMessage}
           editing={editing}
           setEditing={setEditing}
@@ -1069,6 +1214,7 @@ export default function ChannelView({
         channelId={apiChannel?.id}
         channelIntro={channelIntro}
         channelName={channelName}
+        channelLastReadAt={apiChannel?.lastReadAt ?? null}
         channelUnreadCount={apiChannel?.unreadCount ?? 0}
         joinedChannelIds={realtimeChannelIds}
         composerLabel={isDm ? dmUser!.name : `#${channelName}`}
@@ -1079,7 +1225,6 @@ export default function ChannelView({
         openProfile={openProfile}
         openThread={openThread}
         seedMessages={seedMessages}
-        showTyping={!isDm && channelName === 'engineering'}
         workspaceId={workspaceId}
       />
     </div>
