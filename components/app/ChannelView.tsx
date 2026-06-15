@@ -284,6 +284,28 @@ function MessageRow({
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  async function downloadAttachment(relativePath: string, originalName: string) {
+    const url = getUploadFileUrl(relativePath);
+    const response = await fetch(url, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Download failed');
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = objectUrl;
+    link.download = originalName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
+  }
+
   const imageAttachments = m.attachments.filter((attachment) => {
     const mime = attachment.contentType || attachment.mimeType || '';
     return mime.startsWith('image/');
@@ -298,46 +320,77 @@ function MessageRow({
       {imageAttachments.length > 0 && (
         <div className={`grid gap-2 ${imageAttachments.length === 1 ? 'grid-cols-1 max-w-[320px]' : 'grid-cols-2 max-w-[420px]'}`}>
           {imageAttachments.map((attachment) => (
-            <a
+            <div
               key={attachment.relativePath}
-              href={getUploadFileUrl(attachment.relativePath)}
-              target="_blank"
-              rel="noreferrer"
-              className="lift group relative block overflow-hidden rounded-xl border border-line bg-panel hover:border-[#555555] transition"
+              className="group relative overflow-hidden rounded-xl border border-line bg-panel transition hover:border-[#555555]"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={getUploadFileUrl(attachment.relativePath)}
-                alt={attachment.originalName}
-                className="block h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
-              />
-              <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.78)_100%)] px-3 py-2">
-                <div className="truncate text-[12px] font-medium text-white">{attachment.originalName}</div>
-                <div className="text-[11px] text-white/70">{formatAttachmentSize(attachment.size)}</div>
-              </div>
-            </a>
+              <a
+                href={getUploadFileUrl(attachment.relativePath)}
+                target="_blank"
+                rel="noreferrer"
+                className="block"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={getUploadFileUrl(attachment.relativePath)}
+                  alt={attachment.originalName}
+                  className="block h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.78)_100%)] px-3 py-2 pr-12">
+                  <div className="truncate text-[12px] font-medium text-white">{attachment.originalName}</div>
+                  <div className="text-[11px] text-white/70">{formatAttachmentSize(attachment.size)}</div>
+                </div>
+              </a>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  void downloadAttachment(attachment.relativePath, attachment.originalName);
+                }}
+                className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-black/55 text-white/85 backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+                aria-label={`Download ${attachment.originalName}`}
+                title="Download"
+              >
+                <Icon name="download" size={14} />
+              </button>
+            </div>
           ))}
         </div>
       )}
       {fileAttachments.map((attachment) => (
-        <a
+        <div
           key={attachment.relativePath}
-          href={getUploadFileUrl(attachment.relativePath)}
-          target="_blank"
-          rel="noreferrer"
-          className="lift flex max-w-[320px] items-center gap-2.5 rounded-lg border border-line bg-panel px-3 py-2 hover:border-[#555555] hover:bg-elevated transition"
+          className="flex max-w-[320px] items-center gap-2 rounded-lg border border-line bg-panel px-2 py-2 transition hover:border-[#555555] hover:bg-elevated"
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-divider bg-elevated text-sub">
-            <Icon name="folder" size={14} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] font-medium text-ink">{attachment.originalName}</div>
-            <div className="text-[11px] text-muted">
-              {attachment.contentType} · {formatAttachmentSize(attachment.size)}
+          <a
+            href={getUploadFileUrl(attachment.relativePath)}
+            target="_blank"
+            rel="noreferrer"
+            className="lift flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1 py-0.5 transition"
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-divider bg-elevated text-sub">
+              <Icon name="folder" size={14} />
             </div>
-          </div>
-          <Icon name="arrowright" size={13} className="shrink-0 text-muted" />
-        </a>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-medium text-ink">{attachment.originalName}</div>
+              <div className="text-[11px] text-muted">
+                {attachment.contentType} · {formatAttachmentSize(attachment.size)}
+              </div>
+            </div>
+            <Icon name="arrowright" size={13} className="shrink-0 text-muted" />
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              void downloadAttachment(attachment.relativePath, attachment.originalName);
+            }}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-divider bg-elevated text-sub transition hover:text-ink hover:border-[#555555]"
+            aria-label={`Download ${attachment.originalName}`}
+            title="Download"
+          >
+            <Icon name="download" size={14} />
+          </button>
+        </div>
       ))}
     </div>
   );
