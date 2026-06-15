@@ -9,15 +9,29 @@ export function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) 
       role="switch"
       aria-checked={on}
       onClick={onToggle}
-      className={`relative shrink-0 w-10 h-6 rounded-full transition-colors duration-200 cursor-pointer ${
-        on ? 'bg-white' : 'bg-elevated border border-line'
+      className={`group relative shrink-0 w-12 h-7 rounded-full cursor-pointer border transition-all duration-200 ease-out ${
+        on
+          ? 'border-white/70 bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_8px_20px_rgba(255,255,255,0.12)]'
+          : 'border-line bg-elevated hover:border-[#555555]'
       }`}
     >
       <span
-        className={`absolute top-1 w-4 h-4 rounded-full transition-transform duration-200 ${
-          on ? 'bg-black translate-x-5' : 'bg-muted translate-x-1'
+        aria-hidden="true"
+        className={`absolute inset-[1px] rounded-full transition-opacity duration-200 ${
+          on
+            ? 'bg-[linear-gradient(180deg,rgba(255,255,255,0.2),rgba(255,255,255,0.04))] opacity-100'
+            : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] opacity-100'
         }`}
       />
+      <span
+        className={`absolute top-[3px] left-[3px] flex h-5 w-5 items-center justify-center rounded-full transition-all duration-200 ease-out ${
+          on
+            ? 'translate-x-5 bg-black text-white shadow-[0_4px_12px_rgba(0,0,0,0.35)]'
+            : 'translate-x-0 bg-[#6b6b6b] text-transparent shadow-[0_4px_10px_rgba(0,0,0,0.28)] group-hover:bg-[#7a7a7a]'
+        }`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full transition-colors duration-200 ${on ? 'bg-white' : 'bg-[#bfbfbf]'}`} />
+      </span>
     </button>
   );
 }

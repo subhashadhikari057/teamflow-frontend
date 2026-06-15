@@ -16,6 +16,7 @@ import { channelsApi } from '@/lib/api/channels';
 import { getMessageErrorMessage } from '@/lib/api/errors';
 import { messagesApi } from '@/lib/api/messages';
 import { getUploadFileUrl } from '@/lib/api/uploads';
+import { playMessageSound } from '@/lib/message-sound';
 import { getStoredAccessToken, storeAccessToken } from '@/lib/auth-access-token';
 import {
   type ChannelMetaUpdatedPayload,
@@ -29,6 +30,7 @@ import { useToast } from '@/lib/toast-context';
 import type { ChannelMemberSummary, ChannelMessage, ChannelSummary, WorkspaceRole } from '@/lib/api/types';
 import type { Message } from '@/lib/types';
 import { useAppearance } from '@/lib/appearance-context';
+import { USER_PREFERENCE_SETTING_QUERY_KEY } from '@/lib/user-preference-setting';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -462,6 +464,11 @@ function ConversationPane({
   const socketRef = useRef<ReturnType<typeof createMessagesSocket> | null>(null);
   const hasInitialPositionedRef = useRef(false);
   const previousMessageCountRef = useRef(0);
+  const userPreferenceSettingQuery = useQuery({
+    queryKey: USER_PREFERENCE_SETTING_QUERY_KEY,
+    queryFn: authApi.getUserPreferenceSetting,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const channelMessagesQuery = useInfiniteQuery({
     queryKey: ['channel-messages', workspaceId, channelId],
@@ -834,6 +841,10 @@ function ConversationPane({
       const handleCreated = ({ channelId: incomingChannelId, message }: MessageCreatedPayload) => {
         applyMessageToChannelMeta(incomingChannelId, message);
 
+        if (message.senderId !== currentUserId && userPreferenceSettingQuery.data?.messageSoundEnabled !== false) {
+          void playMessageSound();
+        }
+
         if (message.senderId !== currentUserId && incomingChannelId !== channelId) {
           const channelLabel = (
             queryClient.getQueryData<ChannelSummary[] | undefined>(['channels', workspaceId])
@@ -952,7 +963,7 @@ function ConversationPane({
       socketCleanup?.();
       socketRef.current = null;
     };
-  }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, toast, workspaceId]);
+  }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, toast, userPreferenceSettingQuery.data?.messageSoundEnabled, workspaceId]);
 
   function handleSend(text: string) {
     if (isDm) {

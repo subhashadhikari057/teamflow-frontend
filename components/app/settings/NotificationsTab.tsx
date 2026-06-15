@@ -1,16 +1,41 @@
 'use client';
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
+import { authApi } from '@/lib/api/auth';
+import { getAuthErrorMessage } from '@/lib/api/errors';
+import { useToast } from '@/lib/toast-context';
+import { USER_PREFERENCE_SETTING_QUERY_KEY } from '@/lib/user-preference-setting';
 import { Sect, ToggleRow } from './_shared';
 
 export default function NotificationsTab() {
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const [notify,   setNotify]   = useState({ dms: true, mentions: true, threads: true, reactions: false });
-  const [desktop,  setDesktop]  = useState({ enabled: true, sound: true, preview: true });
+  const [desktop,  setDesktop]  = useState({ enabled: true, preview: true });
   const [email,    setEmail]    = useState({ digest: false, weekly: false });
   const [keyword,  setKeyword]  = useState('');
   const [keywords, setKeywords] = useState(['release', 'deploy', 'incident']);
+  const userPreferenceSettingQuery = useQuery({
+    queryKey: USER_PREFERENCE_SETTING_QUERY_KEY,
+    queryFn: authApi.getUserPreferenceSetting,
+    staleTime: 5 * 60 * 1000,
+  });
+  const updateUserPreferenceSetting = useMutation({
+    mutationFn: authApi.updateUserPreferenceSetting,
+    onSuccess: (nextSetting) => {
+      queryClient.setQueryData(USER_PREFERENCE_SETTING_QUERY_KEY, nextSetting);
+      toast.success(
+        nextSetting.messageSoundEnabled ? 'Message sounds enabled' : 'Message sounds disabled',
+      );
+    },
+    onError: (error) => {
+      toast.error(getAuthErrorMessage(error));
+    },
+  });
+  const messageSoundEnabled = userPreferenceSettingQuery.data?.messageSoundEnabled ?? true;
 
   function addKeyword() {
     const k = keyword.trim();
@@ -32,8 +57,20 @@ export default function NotificationsTab() {
 
       <Sect title="Desktop" desc="Browser notifications while the app is in the background">
         <ToggleRow label="Enable desktop notifications" on={desktop.enabled}  onToggle={() => setDesktop(d => ({ ...d, enabled: !d.enabled }))} />
-        <ToggleRow label="Play a sound"                 on={desktop.sound}    onToggle={() => setDesktop(d => ({ ...d, sound: !d.sound }))} />
+        <ToggleRow
+          label="Play a sound"
+          desc="Play a short sound for new incoming messages"
+          on={messageSoundEnabled}
+          onToggle={() => {
+            updateUserPreferenceSetting.mutate({
+              messageSoundEnabled: !messageSoundEnabled,
+            });
+          }}
+        />
         <ToggleRow label="Show message preview" desc="Include message content in the notification" on={desktop.preview} onToggle={() => setDesktop(d => ({ ...d, preview: !d.preview }))} />
+        {userPreferenceSettingQuery.isLoading && (
+          <p className="pt-3 text-[12px] text-sub">Loading sound preference…</p>
+        )}
       </Sect>
 
       <Sect title="Email" desc="Delivered to your inbox when you're away">

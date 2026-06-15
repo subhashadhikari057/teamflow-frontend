@@ -47,6 +47,14 @@ export interface SetCurrentWorkspacePayload {
   workspaceId: string;
 }
 
+export interface UserPreferenceSetting {
+  messageSoundEnabled: boolean;
+}
+
+export interface UpdateUserPreferenceSettingPayload {
+  messageSoundEnabled: boolean;
+}
+
 export interface TokenPair {
   accessToken: string;
   refreshToken: string;

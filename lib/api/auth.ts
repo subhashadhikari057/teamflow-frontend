@@ -22,6 +22,8 @@ import type {
   SetCurrentWorkspacePayload,
   Verify2FAPayload,
   VerifyEmailPayload,
+  UserPreferenceSetting,
+  UpdateUserPreferenceSettingPayload,
 } from './types';
 
 export const authApi = {
@@ -35,6 +37,9 @@ export const authApi = {
   me:         ()                                => get<AuthUser>('/auth/me'),
   setCurrentWorkspace: (data: SetCurrentWorkspacePayload) => patch<AuthUser>('/auth/current-workspace', data),
   updateProfile: (data: UpdateProfilePayload)  => patch<AuthUser>('/auth/profile', data),
+  getUserPreferenceSetting: ()                 => get<UserPreferenceSetting>('/auth/user-preference-setting'),
+  updateUserPreferenceSetting: (data: UpdateUserPreferenceSettingPayload) =>
+    post<UserPreferenceSetting>('/auth/user-preference-setting', data),
 
   // ─── Email verification ────────────────────────────────────────────────
   verifyEmail:        (data: VerifyEmailPayload)        => post<ActionResponse>('/auth/verify-email', data, { skipAuthRefresh: true, skipAuthRedirect: true }),
