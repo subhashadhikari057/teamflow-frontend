@@ -14,6 +14,8 @@ export interface UploadedImage {
   optimized: boolean;
 }
 
+export type UploadedFile = UploadedImage;
+
 export interface MultipleUploadResponse {
   items: UploadedImage[];
 }

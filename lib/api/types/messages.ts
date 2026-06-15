@@ -1,5 +1,15 @@
 import type { ActionResponse } from './common';
 
+export interface ChannelMessageAttachment {
+  fileName: string;
+  originalName: string;
+  relativePath: string;
+  contentType: string;
+  mimeType: string;
+  size: number;
+  optimized: boolean;
+}
+
 export interface ChannelMessageSender {
   id: string;
   name: string;
@@ -13,6 +23,7 @@ export interface ChannelMessage {
   content: string;
   senderId: string;
   sender: ChannelMessageSender;
+  attachments?: ChannelMessageAttachment[];
   createdAt: string;
   editedAt?: string | null;
   isEdited: boolean;
@@ -25,6 +36,7 @@ export interface ListChannelMessagesQuery {
 
 export interface SendChannelMessagePayload {
   content: string;
+  attachments?: ChannelMessageAttachment[];
 }
 
 export interface UpdateChannelMessagePayload {

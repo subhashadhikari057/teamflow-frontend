@@ -16,6 +16,7 @@ import { channelsApi } from '@/lib/api/channels';
 import { getMessageErrorMessage } from '@/lib/api/errors';
 import { messagesApi } from '@/lib/api/messages';
 import { getUploadFileUrl } from '@/lib/api/uploads';
+import { uploadImages } from '@/lib/api/uploads';
 import { playMessageSound } from '@/lib/message-sound';
 import { getStoredAccessToken, storeAccessToken } from '@/lib/auth-access-token';
 import {
@@ -27,7 +28,13 @@ import {
   type TypingPayload,
 } from '@/lib/realtime/messages-socket';
 import { useToast } from '@/lib/toast-context';
-import type { ChannelMemberSummary, ChannelMessage, ChannelSummary, WorkspaceRole } from '@/lib/api/types';
+import type {
+  ChannelMemberSummary,
+  ChannelMessage,
+  ChannelSummary,
+  SendChannelMessagePayload,
+  WorkspaceRole,
+} from '@/lib/api/types';
 import type { Message } from '@/lib/types';
 import { useAppearance } from '@/lib/appearance-context';
 import { USER_PREFERENCE_SETTING_QUERY_KEY } from '@/lib/user-preference-setting';
@@ -58,6 +65,7 @@ interface UiMessage {
   senderAvatarUrl?: string | null;
   time: string;
   body: string;
+  attachments: NonNullable<ChannelMessage['attachments']>;
   reactions: Message['reactions'];
   edited?: boolean;
   thread?: Message['thread'];
@@ -94,6 +102,7 @@ function mapApiMessage(message: ChannelMessage): UiMessage {
     senderAvatarUrl: message.sender.avatarUrl,
     time: formatMessageTime(message.createdAt),
     body: message.content,
+    attachments: message.attachments ?? [],
     reactions: [],
     edited: message.isEdited,
     createdAt: message.createdAt,
@@ -136,11 +145,41 @@ function mapMockMessage(message: Message): UiMessage {
     senderAvatarUrl: null,
     time: message.time,
     body: message.body,
+    attachments: [],
     reactions: message.reactions,
     thread: message.thread,
     edited: message.edited,
     createdAt: undefined,
   };
+}
+
+function getMessageToastDescription(message: ChannelMessage) {
+  const content = message.content.trim();
+
+  if (content) {
+    return content.length > 120 ? `${content.slice(0, 117)}...` : content;
+  }
+
+  const attachments = message.attachments ?? [];
+
+  if (attachments.length === 0) {
+    return 'Sent a message';
+  }
+
+  const imageCount = attachments.filter((attachment) => {
+    const mime = attachment.contentType || attachment.mimeType || '';
+    return mime.startsWith('image/');
+  }).length;
+
+  if (imageCount === attachments.length) {
+    return imageCount === 1 ? 'Sent an image' : `Sent ${imageCount} images`;
+  }
+
+  if (attachments.length === 1) {
+    return `Sent ${attachments[0].originalName}`;
+  }
+
+  return `Sent ${attachments.length} attachments`;
 }
 
 function getInitials(name: string) {
@@ -233,8 +272,79 @@ function MessageRow({
   const avatarSize = isCompact ? 30 : 36;
   const rowPy = isCozy ? 'py-[3px]' : isCompact ? 'py-1' : 'py-1.5';
 
+  function formatAttachmentSize(size: number) {
+    if (size < 1024) {
+      return `${size} B`;
+    }
+
+    if (size < 1024 * 1024) {
+      return `${Math.round(size / 1024)} KB`;
+    }
+
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  const imageAttachments = m.attachments.filter((attachment) => {
+    const mime = attachment.contentType || attachment.mimeType || '';
+    return mime.startsWith('image/');
+  });
+  const fileAttachments = m.attachments.filter((attachment) => {
+    const mime = attachment.contentType || attachment.mimeType || '';
+    return !mime.startsWith('image/');
+  });
+
+  const attachments = m.attachments.length > 0 && (
+    <div className="mt-2 flex flex-col gap-2">
+      {imageAttachments.length > 0 && (
+        <div className={`grid gap-2 ${imageAttachments.length === 1 ? 'grid-cols-1 max-w-[320px]' : 'grid-cols-2 max-w-[420px]'}`}>
+          {imageAttachments.map((attachment) => (
+            <a
+              key={attachment.relativePath}
+              href={getUploadFileUrl(attachment.relativePath)}
+              target="_blank"
+              rel="noreferrer"
+              className="lift group relative block overflow-hidden rounded-xl border border-line bg-panel hover:border-[#555555] transition"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={getUploadFileUrl(attachment.relativePath)}
+                alt={attachment.originalName}
+                className="block h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+              />
+              <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.78)_100%)] px-3 py-2">
+                <div className="truncate text-[12px] font-medium text-white">{attachment.originalName}</div>
+                <div className="text-[11px] text-white/70">{formatAttachmentSize(attachment.size)}</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
+      {fileAttachments.map((attachment) => (
+        <a
+          key={attachment.relativePath}
+          href={getUploadFileUrl(attachment.relativePath)}
+          target="_blank"
+          rel="noreferrer"
+          className="lift flex max-w-[320px] items-center gap-2.5 rounded-lg border border-line bg-panel px-3 py-2 hover:border-[#555555] hover:bg-elevated transition"
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-divider bg-elevated text-sub">
+            <Icon name="folder" size={14} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12px] font-medium text-ink">{attachment.originalName}</div>
+            <div className="text-[11px] text-muted">
+              {attachment.contentType} · {formatAttachmentSize(attachment.size)}
+            </div>
+          </div>
+          <Icon name="arrowright" size={13} className="shrink-0 text-muted" />
+        </a>
+      ))}
+    </div>
+  );
+
   const extras = (
     <>
+      {attachments}
       {m.reactions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mt-2">
           {m.reactions.map((r, i) => <Reaction key={i} r={r} />)}
@@ -507,7 +617,8 @@ function ConversationPane({
     },
   });
   const sendMessage = useMutation({
-    mutationFn: (content: string) => messagesApi.send(workspaceId, channelId as string, { content }),
+    mutationFn: (payload: SendChannelMessagePayload) =>
+      messagesApi.send(workspaceId, channelId as string, payload),
     onSuccess: (message) => {
       const now = new Date().toISOString();
 
@@ -537,6 +648,12 @@ function ConversationPane({
     },
     onError: (error) => {
       toast.error(getMessageErrorMessage(error));
+    },
+  });
+  const uploadAttachments = useMutation({
+    mutationFn: (files: File[]) => uploadImages(files, false),
+    onError: () => {
+      toast.error('Failed to upload attachments. Please try again.');
     },
   });
 
@@ -612,7 +729,7 @@ function ConversationPane({
   const fallbackMessages = seedMessages.map(mapMockMessage);
   const messages = !isDm && channelMessagesQuery.data ? apiMessages : fallbackMessages;
   const canLoadOlder = !isDm && Boolean(channelMessagesQuery.hasNextPage);
-  const isBusy = sendMessage.isPending || updateMessage.isPending || deleteMessage.isPending;
+  const isBusy = sendMessage.isPending || updateMessage.isPending || deleteMessage.isPending || uploadAttachments.isPending;
   const canJoinPublicChannel = !isDm && channelType === 'PUBLIC' && !channelIsMember;
   const composerHidden = canJoinPublicChannel || (!isDm && isReadOnly && !isPrivileged);
   const joinedChannelIdsKey = joinedChannelIds.join(',');
@@ -859,7 +976,7 @@ function ConversationPane({
 
           toast.info(
             `${message.sender.name} in #${channelLabel}`,
-            message.content.length > 120 ? `${message.content.slice(0, 117)}...` : message.content,
+            getMessageToastDescription(message),
             message.sender.avatarUrl ?? undefined,
           );
         }
@@ -970,7 +1087,13 @@ function ConversationPane({
     };
   }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, toast, userPreferenceSettingQuery.data?.messageSoundEnabled, workspaceId]);
 
-  function handleSend(text: string) {
+  async function handleSend({
+    text,
+    files,
+  }: {
+    text: string;
+    files: File[];
+  }) {
     if (isDm) {
       return;
     }
@@ -980,7 +1103,18 @@ function ConversationPane({
       return;
     }
 
-    sendMessage.mutate(text);
+    try {
+      const uploadedAttachments = files.length > 0
+        ? (await uploadAttachments.mutateAsync(files)).items
+        : [];
+
+      sendMessage.mutate({
+        content: text,
+        attachments: uploadedAttachments,
+      });
+    } catch {
+      return;
+    }
   }
 
   function emitTypingStart() {
