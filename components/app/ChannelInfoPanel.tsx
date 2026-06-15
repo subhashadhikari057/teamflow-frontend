@@ -412,6 +412,28 @@ function FilesTab({
     return <Empty icon="folder" text="No files shared yet" />;
   }
 
+  async function downloadFile(relativePath: string, originalName: string) {
+    const url = getUploadFileUrl(relativePath);
+    const response = await fetch(url, {
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Download failed');
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = objectUrl;
+    link.download = originalName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(objectUrl);
+  }
+
   return (
     <div className="p-3">
       {files.map((file) => (
@@ -425,8 +447,23 @@ function FilesTab({
           <div className="truncate text-[13px] text-ink">
             {file.attachment.originalName}
           </div>
-          <div className="mt-0.5 truncate text-[11px] text-muted">
-            {getFileKindLabel(file.attachment)} · {formatFileSize(file.attachment.size)} · {file.senderName} · {formatFileDate(file.createdAt)}
+          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+            <span className="min-w-0 truncate">
+              {getFileKindLabel(file.attachment)} · {formatFileSize(file.attachment.size)} · {file.senderName} · {formatFileDate(file.createdAt)}
+            </span>
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void downloadFile(file.attachment.relativePath, file.attachment.originalName);
+              }}
+              className="shrink-0 cursor-pointer text-muted hover:text-ink transition"
+              aria-label={`Download ${file.attachment.originalName}`}
+              title="Download"
+            >
+              <Icon name="download" size={12} />
+            </button>
           </div>
         </a>
       ))}
