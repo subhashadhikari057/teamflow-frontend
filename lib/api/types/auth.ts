@@ -17,7 +17,7 @@ export interface AuthUser {
   email: string;
   username: string;
   name: string;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
   phone?: string;
   status?: UserStatus;
   timezone?: string;
@@ -37,6 +37,7 @@ export interface AuthUser {
 
 export interface UpdateProfilePayload {
   name?: string;
+  avatarUrl?: string;
   phone?: string;
   status?: UserStatus;
   timezone?: string;

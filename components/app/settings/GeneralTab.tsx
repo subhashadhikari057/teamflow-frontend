@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ME_KEY, useCurrentUser } from '@/hooks/auth';
 import { getWorkspaceErrorMessage, getWorkspaceLeaveErrorMessage } from '@/lib/api/errors';
 import { authApi } from '@/lib/api/auth';
+import { getUploadFileUrl, uploadImage } from '@/lib/api/uploads';
 import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
-import type { AuthUser, WorkspacePlan, WorkspaceSummary } from '@/lib/api/types';
+import type { AuthUser, UpdateWorkspacePayload, WorkspacePlan, WorkspaceSummary } from '@/lib/api/types';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import { ConfirmDialog } from './_shared';
@@ -51,15 +52,16 @@ export default function GeneralTab() {
   const [editing, setEditing] = useState(false);
   const [draftWsName, setDraftWsName] = useState('');
   const [draftDescription, setDraftDescription] = useState('');
-  const [localWorkspaceName, setLocalWorkspaceName] = useState<string | null>(null);
-  const [localWorkspaceDescription, setLocalWorkspaceDescription] = useState<string | null>(null);
+  const [draftLogoPath, setDraftLogoPath] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'leave' | 'delete' | null>(null);
   const [failedLogoUrl, setFailedLogoUrl] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const displayWorkspaceName = localWorkspaceName ?? workspaceName;
-  const displayWorkspaceDescription = localWorkspaceDescription ?? workspaceDescription;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const displayWorkspaceName = editing ? draftWsName : workspaceName;
+  const displayWorkspaceDescription = editing ? draftDescription : workspaceDescription;
+  const resolvedWorkspaceLogoUrl = getUploadFileUrl(editing ? draftLogoPath ?? workspaceLogoUrl : workspaceLogoUrl);
   const workspaceInitial = displayWorkspaceName.trim().charAt(0).toUpperCase() || 'N';
-  const showWorkspaceLogo = Boolean(workspaceLogoUrl && failedLogoUrl !== workspaceLogoUrl);
+  const showWorkspaceLogo = Boolean(resolvedWorkspaceLogoUrl && failedLogoUrl !== resolvedWorkspaceLogoUrl);
 
   function syncWorkspaceExitState() {
     const remainingWorkspaces = (queryClient.getQueryData<WorkspaceSummary[]>(['workspaces']) ?? [])
@@ -124,16 +126,77 @@ export default function GeneralTab() {
     },
   });
 
+  const updateWorkspace = useMutation({
+    mutationFn: (data: UpdateWorkspacePayload) => workspacesApi.update(workspaceId as string, data),
+    onSuccess: (updatedWorkspace) => {
+      queryClient.setQueryData(['workspace', updatedWorkspace.id], updatedWorkspace);
+      queryClient.setQueryData<WorkspaceSummary[] | undefined>(['workspaces'], (current) => (
+        current?.map((workspace) => (
+          workspace.id === updatedWorkspace.id ? { ...workspace, ...updatedWorkspace } : workspace
+        ))
+      ));
+      queryClient.setQueryData<AuthUser | undefined>(ME_KEY, (current) => (
+        current ? {
+          ...current,
+          currentWorkspace: current.currentWorkspace && current.currentWorkspace.id === updatedWorkspace.id
+            ? {
+              ...current.currentWorkspace,
+              name: updatedWorkspace.name,
+              slug: updatedWorkspace.slug,
+            }
+            : current.currentWorkspace,
+        } : current
+      ));
+      setDraftLogoPath(null);
+      setEditing(false);
+      toast.success('Workspace updated');
+    },
+    onError: (error) => {
+      toast.error(getWorkspaceErrorMessage(error));
+    },
+  });
+
   function startEditing() {
-    setDraftWsName(displayWorkspaceName);
-    setDraftDescription(displayWorkspaceDescription);
+    setDraftWsName(workspaceName);
+    setDraftDescription(workspaceDescription);
+    setDraftLogoPath(workspaceLogoUrl);
     setEditing(true);
   }
 
   function cancelEditing() {
-    setDraftWsName(displayWorkspaceName);
-    setDraftDescription(displayWorkspaceDescription);
+    setDraftWsName(workspaceName);
+    setDraftDescription(workspaceDescription);
+    setDraftLogoPath(workspaceLogoUrl);
+    setIsUploadingLogo(false);
+    setFailedLogoUrl(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setEditing(false);
+  }
+
+  async function handleLogoChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingLogo(true);
+
+    try {
+      const uploaded = await uploadImage(file, true);
+      setDraftLogoPath(uploaded.relativePath);
+      setFailedLogoUrl(null);
+      toast.success('Workspace image uploaded');
+    } catch {
+      toast.error('Failed to upload workspace image. Please try again.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } finally {
+      setIsUploadingLogo(false);
+    }
   }
 
   function save() {
@@ -144,11 +207,11 @@ export default function GeneralTab() {
       return;
     }
 
-    setLocalWorkspaceName(nextName);
-    setLocalWorkspaceDescription(draftDescription.trim());
-    setEditing(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    updateWorkspace.mutate({
+      name: nextName,
+      description: draftDescription.trim(),
+      logoUrl: draftLogoPath ?? undefined,
+    });
   }
 
   return (
@@ -164,10 +227,10 @@ export default function GeneralTab() {
           {showWorkspaceLogo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={workspaceLogoUrl ?? undefined}
+              src={resolvedWorkspaceLogoUrl || undefined}
               alt={`${displayWorkspaceName} logo`}
               className="w-20 h-20 rounded-2xl object-cover border border-line"
-              onError={() => setFailedLogoUrl(workspaceLogoUrl)}
+              onError={() => setFailedLogoUrl(resolvedWorkspaceLogoUrl)}
             />
           ) : (
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-semibold text-2xl select-none" style={{ letterSpacing: '-0.02em' }}>
@@ -175,9 +238,30 @@ export default function GeneralTab() {
             </div>
           )}
           {editing && (
-            <button className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-panel border border-line flex items-center justify-center text-sub hover:text-ink transition shadow-sm">
-              <Icon name="compose" size={12} />
-            </button>
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                className="hidden"
+                onChange={handleLogoChange}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingLogo}
+                className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-panel border border-line flex items-center justify-center text-sub hover:text-ink disabled:text-muted disabled:cursor-not-allowed transition shadow-sm"
+                aria-label="Upload workspace image"
+                title="Upload workspace image"
+              >
+                <Icon name="compose" size={12} />
+              </button>
+            </>
+          )}
+          {editing && isUploadingLogo && (
+            <div className="absolute inset-0 rounded-2xl bg-black/45 flex items-center justify-center text-[11px] text-white font-medium">
+              Uploading…
+            </div>
           )}
         </div>
         <div className="min-w-0">
@@ -254,8 +338,8 @@ export default function GeneralTab() {
             <Button variant="secondary" onClick={cancelEditing} disabled={leaveWorkspace.isPending || deleteWorkspace.isPending}>
               Cancel
             </Button>
-            <Button onClick={save}>
-              {saved ? <><Icon name="check" size={15} /> Saved!</> : 'Save changes'}
+            <Button onClick={save} disabled={updateWorkspace.isPending || isUploadingLogo}>
+              {isUploadingLogo ? 'Uploading…' : updateWorkspace.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </>
         ) : (

@@ -29,13 +29,19 @@ export function getErrorCode(error: unknown): string {
 
 async function request<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
   const { skipAuthRefresh, skipAuthRedirect, ...requestInit } = init;
+  void skipAuthRefresh;
+  void skipAuthRedirect;
+  const headers = new Headers(requestInit.headers);
+  const isFormData = requestInit.body instanceof FormData;
+
+  if (!isFormData && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...requestInit,
     credentials: 'include',          // send HttpOnly cookies automatically
-    headers: {
-      'Content-Type': 'application/json',
-      ...requestInit.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -106,6 +112,9 @@ export const get  = <T>(path: string, init?: ApiRequestInit) =>
 
 export const post  = <T>(path: string, body?: unknown, init?: ApiRequestInit) =>
   api<T>(path, { ...init, method: 'POST',  body: body !== undefined ? JSON.stringify(body) : undefined });
+
+export const postForm = <T>(path: string, body: FormData, init?: ApiRequestInit) =>
+  api<T>(path, { ...init, method: 'POST', body });
 
 export const patch = <T>(path: string, body?: unknown, init?: ApiRequestInit) =>
   api<T>(path, { ...init, method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined });

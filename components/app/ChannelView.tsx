@@ -10,6 +10,7 @@ import MessageBody from './MessageBody';
 import Composer from './Composer';
 import { CHANNELS, ENG_MESSAGES, USERS } from '@/lib/data';
 import { channelsApi } from '@/lib/api/channels';
+import { getUploadFileUrl } from '@/lib/api/uploads';
 import type { ChannelMemberSummary, ChannelSummary } from '@/lib/api/types';
 import type { Message } from '@/lib/types';
 import { useAppearance } from '@/lib/appearance-context';
@@ -182,7 +183,7 @@ function ChannelHeaderAvatar({ member }: { member: ChannelMemberSummary }) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={member.avatarUrl}
+        src={getUploadFileUrl(member.avatarUrl)}
         alt={member.name ?? member.username}
         className="w-6 h-6 rounded-md object-cover border border-bg shrink-0"
       />

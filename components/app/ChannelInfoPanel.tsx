@@ -1,12 +1,17 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import EditChannelModal from '@/components/app/EditChannelModal';
 import { CHANNELS, USERS } from '@/lib/data';
 import { channelsApi } from '@/lib/api/channels';
-import type { ChannelDetail, ChannelMemberSummary, ChannelSummary } from '@/lib/api/types';
+import { getChannelErrorMessage } from '@/lib/api/errors';
+import { getUploadFileUrl } from '@/lib/api/uploads';
+import { workspacesApi } from '@/lib/api/workspaces';
+import { useToast } from '@/lib/toast-context';
+import type { ChannelDetail, ChannelMemberSummary, ChannelSummary, WorkspaceMemberSummary } from '@/lib/api/types';
 
 interface ActiveView {
   type: 'channel' | 'dm';
@@ -68,7 +73,7 @@ function ChannelMemberAvatar({ member }: { member: ChannelMemberSummary }) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={member.avatarUrl}
+        src={getUploadFileUrl(member.avatarUrl)}
         alt={member.name ?? member.username}
         className="w-[30px] h-[30px] rounded-lg object-cover shrink-0 border border-line"
       />
@@ -156,21 +161,54 @@ function MembersTab({
   members,
   isLoading,
   isError,
+  canAddMembers,
+  eligibleMembers,
+  isWorkspaceMembersLoading,
+  isWorkspaceMembersError,
+  addingUserId,
+  onAddMember,
+  onRetryWorkspaceMembers,
   onOpenProfile,
 }: {
   members: ChannelMemberSummary[];
   isLoading: boolean;
   isError: boolean;
+  canAddMembers: boolean;
+  eligibleMembers: WorkspaceMemberSummary[];
+  isWorkspaceMembersLoading: boolean;
+  isWorkspaceMembersError: boolean;
+  addingUserId: string | null;
+  onAddMember: (userId: string) => void;
+  onRetryWorkspaceMembers: () => void;
   onOpenProfile: (id: string) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [showAddPanel, setShowAddPanel] = useState(false);
   const filtered = members.filter((member) =>
     `${member.name ?? ''} ${member.username}`.toLowerCase().includes(query.toLowerCase())
+  );
+  const filteredEligibleMembers = eligibleMembers.filter((member) =>
+    `${member.name} ${member.username}`.toLowerCase().includes(query.toLowerCase())
   );
 
   return (
     <div className="flex flex-col h-full">
       <div className="p-3 border-b border-divider">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold">
+            {members.length} member{members.length !== 1 ? 's' : ''}
+          </div>
+          {canAddMembers && (
+            <Button
+              size="sm"
+              variant={showAddPanel ? 'secondary' : 'primary'}
+              onClick={() => setShowAddPanel((open) => !open)}
+            >
+              <Icon name="plus" size={13} />
+              Add people
+            </Button>
+          )}
+        </div>
         <div className="relative">
           <Icon name="search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted pointer-events-none" />
           <input
@@ -180,6 +218,55 @@ function MembersTab({
             className="w-full h-8 pl-8 pr-3 rounded-md bg-elevated border border-line text-[13px] text-ink placeholder:text-muted outline-none focus:border-[#555555] transition"
           />
         </div>
+        {canAddMembers && showAddPanel && (
+          <div className="mt-3 rounded-md border border-line bg-panel overflow-hidden">
+            <div className="px-3 py-2 border-b border-divider text-[12px] text-sub">
+              Add workspace members to this private channel
+            </div>
+            {isWorkspaceMembersLoading ? (
+              <div className="px-3 py-4 text-[12px] text-sub">Loading workspace members…</div>
+            ) : isWorkspaceMembersError ? (
+              <div className="px-3 py-4 flex items-center justify-between gap-3">
+                <span className="text-[12px] text-sub">We couldn&apos;t load workspace members.</span>
+                <Button variant="secondary" size="sm" onClick={onRetryWorkspaceMembers}>
+                  Retry
+                </Button>
+              </div>
+            ) : filteredEligibleMembers.length === 0 ? (
+              <div className="px-3 py-4 text-[12px] text-sub">
+                {eligibleMembers.length === 0 ? 'Everyone in the workspace is already in this channel.' : 'No workspace members match your search.'}
+              </div>
+            ) : (
+              <div className="max-h-56 overflow-y-auto p-1.5">
+                {filteredEligibleMembers.map((member) => {
+                  const isAdding = addingUserId === member.userId;
+
+                  return (
+                    <button
+                      key={member.id}
+                      type="button"
+                      onClick={() => onAddMember(member.userId)}
+                      disabled={Boolean(addingUserId)}
+                      className="w-full flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-elevated disabled:opacity-50 disabled:cursor-not-allowed transition text-left"
+                    >
+                      <div
+                        className="w-[30px] h-[30px] rounded-lg shrink-0 flex items-center justify-center text-[12px] font-semibold text-white select-none"
+                        style={{ background: '#3b82f6' }}
+                      >
+                        {getInitials(member.name)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[13px] font-medium text-ink truncate">{member.name}</div>
+                        <div className="text-[11px] text-muted truncate">@{member.username}</div>
+                      </div>
+                      <span className="text-[11px] text-sub shrink-0">{isAdding ? 'Adding…' : 'Add'}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto p-2">
         {isLoading ? (
@@ -194,9 +281,6 @@ function MembersTab({
           </div>
         ) : (
           <>
-        <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold px-2 py-1.5">
-          {filtered.length} member{filtered.length !== 1 ? 's' : ''}
-        </div>
         {filtered.map((member) => (
           <button
             key={member.id}
@@ -338,6 +422,8 @@ export default function ChannelInfoPanel({
   onOpenProfile,
   onChannelDeleted,
 }: Props) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
   const isDm = active.type === 'dm';
   const apiChannel = !isDm ? channels.find((channel) => channel.id === active.id) ?? null : null;
   const fallbackChannel = !isDm ? CHANNELS.find((channel) => channel.id === active.id) ?? null : null;
@@ -364,10 +450,62 @@ export default function ChannelInfoPanel({
     ?? (creatorMember?.username ? `@${creatorMember.username}` : channel?.createdBy || 'Unknown');
   const channelMemberCount = channelMembers.length || channel?.memberCount || fallbackChannel?.members || 0;
   const dmUser  = isDm ? USERS[active.id] : null;
+  const workspaceMembersQuery = useQuery({
+    queryKey: ['workspace-members', workspaceId],
+    queryFn: () => workspacesApi.listMembers(workspaceId),
+    enabled: !isDm && channel?.type === 'PRIVATE',
+    staleTime: 60_000,
+  });
+  const eligibleWorkspaceMembers = useMemo(() => {
+    const channelMemberUserIds = new Set(channelMembers.map((member) => member.userId));
+
+    return (workspaceMembersQuery.data ?? []).filter((member) => !channelMemberUserIds.has(member.userId));
+  }, [channelMembers, workspaceMembersQuery.data]);
 
   const tabs = isDm ? DM_TABS : CHANNEL_TABS;
   const [tab, setTab] = useState<string>(tabs[0]);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const addChannelMember = useMutation({
+    mutationFn: (userId: string) => channelsApi.addMember(workspaceId, active.id, { userId }),
+    onSuccess: (addedMember) => {
+      queryClient.setQueryData<ChannelDetail | ChannelSummary | undefined>(
+        ['channel', workspaceId, active.id],
+        (current) => {
+          if (!current) {
+            return current;
+          }
+
+          const existingMembers = 'members' in current && Array.isArray(current.members)
+            ? current.members
+            : [];
+
+          const nextMembers = existingMembers.some((member) => member.userId === addedMember.userId)
+            ? existingMembers
+            : [...existingMembers, addedMember];
+
+          return {
+            ...current,
+            memberCount: Math.max(current.memberCount ?? 0, nextMembers.length),
+            members: nextMembers,
+          };
+        },
+      );
+      queryClient.setQueryData<ChannelSummary[] | undefined>(
+        ['channels', workspaceId],
+        (current) => current?.map((item) => (
+          item.id === active.id
+            ? { ...item, memberCount: Math.max(item.memberCount ?? 0, channelMemberCount + 1) }
+            : item
+        )),
+      );
+      void queryClient.invalidateQueries({ queryKey: ['channel', workspaceId, active.id] });
+      void queryClient.invalidateQueries({ queryKey: ['channels', workspaceId] });
+      toast.success('Member added to channel');
+    },
+    onError: (error) => {
+      toast.error(getChannelErrorMessage(error));
+    },
+  });
 
   return (
     <>
@@ -432,6 +570,13 @@ export default function ChannelInfoPanel({
               members={channelMembers}
               isLoading={channelDetailQuery.isLoading}
               isError={channelDetailQuery.isError}
+              canAddMembers={channel?.type === 'PRIVATE'}
+              eligibleMembers={eligibleWorkspaceMembers}
+              isWorkspaceMembersLoading={workspaceMembersQuery.isLoading}
+              isWorkspaceMembersError={workspaceMembersQuery.isError}
+              addingUserId={addChannelMember.isPending ? addChannelMember.variables ?? null : null}
+              onAddMember={(userId) => addChannelMember.mutate(userId)}
+              onRetryWorkspaceMembers={() => workspaceMembersQuery.refetch()}
               onOpenProfile={onOpenProfile}
             />
           )}

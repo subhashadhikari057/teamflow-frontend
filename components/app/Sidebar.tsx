@@ -11,6 +11,7 @@ import { DMS, USERS } from '@/lib/data';
 import { ME_KEY, useCurrentUser, useLogout } from '@/hooks/auth';
 import { authApi } from '@/lib/api/auth';
 import { getWorkspaceErrorMessage } from '@/lib/api/errors';
+import { getUploadFileUrl } from '@/lib/api/uploads';
 import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
 import type { ChannelSummary, UserStatus, WorkspaceSummary } from '@/lib/api/types';
@@ -94,7 +95,7 @@ function WorkspaceAvatar({
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={workspace.logoUrl}
+        src={getUploadFileUrl(workspace.logoUrl)}
         alt={workspace.name}
         className="rounded-md object-cover shrink-0"
         style={{ width: size, height: size }}
@@ -650,7 +651,7 @@ export default function Sidebar({
           {/* Avatar */}
           {me?.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={me.avatarUrl} alt={me.name} className="shrink-0 rounded-md object-cover" style={{ width: 30, height: 30 }} />
+            <img src={getUploadFileUrl(me.avatarUrl)} alt={me.name} className="shrink-0 rounded-md object-cover" style={{ width: 30, height: 30 }} />
           ) : (
             <div
               className="shrink-0 rounded-md flex items-center justify-center font-semibold text-white select-none"

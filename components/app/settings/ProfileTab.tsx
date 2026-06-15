@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import Icon from '@/components/primitives/Icon';
 import Button from '@/components/primitives/Button';
 import { useCurrentUser, useMe, useUpdateProfile } from '@/hooks/auth';
+import { uploadImage, getUploadFileUrl } from '@/lib/api/uploads';
 import { useToast } from '@/lib/toast-context';
 import type { UserStatus } from '@/lib/api/types';
 
@@ -92,23 +93,66 @@ export default function ProfileTab() {
   const [phone,    setPhone]    = useState('');
   const [status,   setStatus]   = useState<UserStatus | ''>('');
   const [timezone, setTimezone] = useState('');
+  const [uploadedAvatarPath, setUploadedAvatarPath] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function syncFromUser() {
-    if (user) {
-      setName(user.name);
-      setPhone(user.phone ?? '');
-      setStatus(user.status ?? '');
-      setTimezone(user.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+  function resetDraft() {
+    setUploadedAvatarPath(null);
+    setIsUploadingAvatar(false);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   }
 
-  useEffect(() => { syncFromUser(); }, [user]);
+  function startEditing() {
+    setName(user?.name ?? '');
+    setPhone(user?.phone ?? '');
+    setStatus(user?.status ?? '');
+    setTimezone(user?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+    resetDraft();
+    setEditing(true);
+  }
 
-  function cancel() { syncFromUser(); setEditing(false); }
+  function cancel() {
+    resetDraft();
+    setEditing(false);
+  }
+
+  async function handleAvatarChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+
+    try {
+      const uploaded = await uploadImage(file, true);
+      setUploadedAvatarPath(uploaded.relativePath);
+      toast.success('Image uploaded');
+    } catch {
+      toast.error('Failed to upload image. Please try again.');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  }
 
   async function save() {
     try {
-      await updateProfile.mutateAsync({ name, phone, status: status || undefined, timezone });
+      await updateProfile.mutateAsync({
+        name,
+        phone,
+        status: status || undefined,
+        timezone,
+        avatarUrl: uploadedAvatarPath ?? undefined,
+      });
+      resetDraft();
       toast.success('Profile updated');
       setEditing(false);
     } catch {
@@ -119,6 +163,8 @@ export default function ProfileTab() {
   const initials     = user?.name.split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase() ?? '?';
   const statusOption = STATUS_OPTIONS.find(o => o.value === user?.status);
   const timezoneLabel = user?.timezone?.replace(/_/g, ' ') ?? '—';
+  const avatarSrc = getUploadFileUrl(uploadedAvatarPath ?? user?.avatarUrl);
+  const disableSave = updateProfile.isPending || isUploadingAvatar;
 
   if (isLoading) return <div className="text-[14px] text-sub py-10 text-center">Loading…</div>;
 
@@ -127,17 +173,39 @@ export default function ProfileTab() {
       {/* Avatar + identity header */}
       <div className="flex items-center gap-5 pb-7 border-b border-divider">
         <div className="relative shrink-0">
-          {user?.avatarUrl ? (
-            <img src={user.avatarUrl} alt={user.name} className="w-20 h-20 rounded-2xl object-cover" />
+          {avatarSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarSrc} alt={user?.name ?? 'Profile avatar'} className="w-20 h-20 rounded-2xl object-cover" />
           ) : (
             <div className="w-20 h-20 rounded-2xl bg-elevated border border-line flex items-center justify-center text-ink font-semibold text-2xl select-none">
               {initials}
             </div>
           )}
           {editing && (
-            <button className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-panel border border-line flex items-center justify-center text-sub hover:text-ink transition shadow-sm">
-              <Icon name="compose" size={12} />
-            </button>
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                className="hidden"
+                onChange={handleAvatarChange}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="absolute -bottom-2 -right-2 w-7 h-7 rounded-full bg-panel border border-line flex items-center justify-center text-sub hover:text-ink disabled:text-muted disabled:cursor-not-allowed transition shadow-sm"
+                aria-label="Upload profile photo"
+                title="Upload profile photo"
+              >
+                <Icon name="compose" size={12} />
+              </button>
+            </>
+          )}
+          {editing && isUploadingAvatar && (
+            <div className="absolute inset-0 rounded-2xl bg-black/45 flex items-center justify-center text-[11px] text-white font-medium">
+              Uploading…
+            </div>
           )}
         </div>
         <div className="min-w-0">
@@ -201,13 +269,13 @@ export default function ProfileTab() {
       <div className="flex items-center justify-end pt-4 gap-3">
         {editing ? (
           <>
-            <Button variant="secondary" onClick={cancel} disabled={updateProfile.isPending}>Cancel</Button>
-            <Button onClick={save} disabled={updateProfile.isPending}>
-              {updateProfile.isPending ? 'Saving…' : 'Save changes'}
+            <Button variant="secondary" onClick={cancel} disabled={disableSave}>Cancel</Button>
+            <Button onClick={save} disabled={disableSave}>
+              {isUploadingAvatar ? 'Uploading…' : updateProfile.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </>
         ) : (
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+          <Button variant="secondary" size="sm" onClick={startEditing}>
             <Icon name="compose" size={13} /> Edit profile
           </Button>
         )}

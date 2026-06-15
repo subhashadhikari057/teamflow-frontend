@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/auth';
 import { getWorkspaceErrorMessage } from '@/lib/api/errors';
+import { getUploadFileUrl } from '@/lib/api/uploads';
 import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
 import type {
@@ -86,7 +87,7 @@ function MemberAvatar({ member }: { member: WorkspaceMemberSummary }) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={member.avatarUrl}
+        src={getUploadFileUrl(member.avatarUrl)}
         alt={member.name}
         className="w-[34px] h-[34px] rounded-lg object-cover shrink-0 border border-line"
       />
