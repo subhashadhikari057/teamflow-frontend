@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import Avatar from '@/components/primitives/Avatar';
 import Icon from '@/components/primitives/Icon';
 import Button from '@/components/primitives/Button';
 import { USERS } from '@/lib/data';
@@ -10,9 +9,10 @@ interface ProfilePopoverProps {
   userId: string;
   onClose: () => void;
   onMessage: (id: string) => void;
+  onSetStatus: () => void;
 }
 
-export default function ProfilePopover({ userId, onClose, onMessage }: ProfilePopoverProps) {
+export default function ProfilePopover({ userId, onClose, onMessage, onSetStatus }: ProfilePopoverProps) {
   const u = USERS[userId];
   const isMe = userId === 'ashim';
 
@@ -55,7 +55,13 @@ export default function ProfilePopover({ userId, onClose, onMessage }: ProfilePo
             </div>
           )}
           {isMe && (
-            <button className="mt-3 w-full flex items-center gap-2 text-[13px] text-sub hover:text-ink bg-elevated border border-line rounded-md px-3 h-9 transition">
+            <button
+              onClick={() => {
+                onClose();
+                onSetStatus();
+              }}
+              className="mt-3 w-full flex items-center gap-2 text-[13px] text-sub hover:text-ink bg-elevated border border-line rounded-md px-3 h-9 transition"
+            >
               <span className="w-2 h-2 rounded-full bg-online" /> Set a status…
             </button>
           )}

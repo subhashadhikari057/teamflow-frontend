@@ -12,6 +12,7 @@ import ProfilePopover from '@/components/app/ProfilePopover';
 import CallOverlay from '@/components/app/CallOverlay';
 import ChannelInfoPanel from '@/components/app/ChannelInfoPanel';
 import CreateChannelModal from '@/components/app/CreateChannelModal';
+import SetStatusModal from '@/components/app/SetStatusModal';
 import { useToast } from '@/lib/toast-context';
 import { AppearanceContext } from '@/lib/appearance-context';
 import type { Density, FontSize } from '@/lib/appearance-context';
@@ -40,6 +41,7 @@ interface Overlays {
   shortcuts: boolean;
   info: boolean;
   createChannel: boolean;
+  setStatus: boolean;
 }
 
 interface CallState {
@@ -103,7 +105,7 @@ export default function WorkspacePage({
   const [active, setActive] = useState<ActiveView>({ type: 'channel', id: 'engineering' });
   const [threadId, setThreadId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [ov, setOv] = useState<Overlays>({ search: false, shortcuts: false, info: false, createChannel: false });
+  const [ov, setOv] = useState<Overlays>({ search: false, shortcuts: false, info: false, createChannel: false, setStatus: false });
   const [profileUser, setProfileUser] = useState<string | null>(null);
   const [call, setCall] = useState<CallState>({ open: false, muted: false, camOff: false, sharing: false });
   const { show: flashToast } = useToast();
@@ -245,7 +247,7 @@ export default function WorkspacePage({
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable;
       const k = e.key;
       const ctrl = e.ctrlKey || e.metaKey;
-      const modalOpen = ov.search || ov.shortcuts || call.open || ov.info || ov.createChannel;
+      const modalOpen = ov.search || ov.shortcuts || call.open || ov.info || ov.createChannel || ov.setStatus;
 
       if ((k === '?' && !typing) || (ctrl && k === '/')) {
         e.preventDefault();
@@ -268,7 +270,7 @@ export default function WorkspacePage({
           l: () => { selectChannel('general'); flashToast('All channels'); },
           x: () => flashToast('Strikethrough'),
           c: () => flashToast('Inline code'),
-          y: () => setProfileUser('ashim'),
+          y: () => setOv((o) => ({ ...o, setStatus: true })),
           h: () => flashToast('Activity feed'),
           s: () => flashToast('Saved items'),
           a: () => flashToast('All unreads'),
@@ -403,11 +405,15 @@ export default function WorkspacePage({
             }}
           />
         )}
+        {ov.setStatus && (
+          <SetStatusModal onClose={() => setOv((o) => ({ ...o, setStatus: false }))} open={ov.setStatus} />
+        )}
         {profileUser && (
           <ProfilePopover
             userId={profileUser}
             onClose={() => setProfileUser(null)}
             onMessage={(id) => { setProfileUser(null); selectDm(id); }}
+            onSetStatus={() => setOv((o) => ({ ...o, setStatus: true }))}
           />
         )}
       </div>

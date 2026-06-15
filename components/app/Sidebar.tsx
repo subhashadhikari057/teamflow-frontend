@@ -14,32 +14,9 @@ import { getWorkspaceErrorMessage } from '@/lib/api/errors';
 import { getUploadFileUrl } from '@/lib/api/uploads';
 import { workspacesApi } from '@/lib/api/workspaces';
 import { useToast } from '@/lib/toast-context';
-import type { ChannelSummary, UserStatus, WorkspaceSummary } from '@/lib/api/types';
+import type { ChannelSummary, WorkspaceSummary } from '@/lib/api/types';
+import { STATUS_COLOR, STATUS_LABEL } from '@/lib/user-status';
 import { getSettingsPath, getWorkspacePath } from '@/lib/workspace-routing';
-
-const STATUS_COLOR: Record<UserStatus, string> = {
-  ONLINE:         '#22c55e',
-  AWAY:           '#eab308',
-  BUSY:           '#ef4444',
-  DO_NOT_DISTURB: '#ef4444',
-  FOCUSING:       '#a855f7',
-  IN_A_MEETING:   '#3b82f6',
-  ON_VACATION:    '#14b8a6',
-  OUT_OF_OFFICE:  '#f97316',
-  OFFLINE:        '#6b7280',
-};
-
-const STATUS_LABEL: Record<UserStatus, string> = {
-  ONLINE:         'Online',
-  AWAY:           'Away',
-  BUSY:           'Busy',
-  DO_NOT_DISTURB: 'Do not disturb',
-  FOCUSING:       'Focusing',
-  IN_A_MEETING:   'In a meeting',
-  ON_VACATION:    'On vacation',
-  OUT_OF_OFFICE:  'Out of office',
-  OFFLINE:        'Offline',
-};
 
 interface ActiveView {
   type: 'channel' | 'dm';
