@@ -94,18 +94,23 @@ function AboutTab({
   channel,
   creatorLabel,
   memberCount,
+  isLeaving,
   onEdit,
+  onLeave,
 }: {
   channel: ChannelSummary;
   creatorLabel: string;
   memberCount: number;
+  isLeaving: boolean;
   onEdit: () => void;
+  onLeave: () => void;
 }) {
   const description = channel.description?.trim() || 'No description set';
   const topic = channel.topic?.trim() || 'No topic set';
   const privacyLabel = channel.type === 'PRIVATE' ? 'Private' : 'Public';
   const postingLabel = channel.isReadOnly ? 'Read only' : 'Open to members';
   const canEdit = !channel.isGeneral;
+  const canLeave = channel.type === 'PUBLIC' && channel.isMember;
 
   return (
     <div className="p-4 space-y-5">
@@ -151,6 +156,25 @@ function AboutTab({
         <MetaRow icon="hash" label="Created" value={formatChannelCreatedAt(channel.createdAt)} />
         <MetaRow icon="at" label="Created by" value={creatorLabel} />
       </div>
+
+      {canLeave && (
+        <div className="pt-1">
+          <div className="text-[11px] uppercase tracking-[0.1em] text-muted font-semibold mb-2">Access</div>
+          <div className="rounded-md border border-line bg-panel p-3 space-y-3">
+            <p className="text-[12px] leading-[1.6] text-sub">
+              You are currently a member of this public channel. Leave it if you no longer want it in your sidebar.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onLeave}
+              disabled={isLeaving}
+            >
+              {isLeaving ? 'Leaving…' : 'Leave channel'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -465,6 +489,27 @@ export default function ChannelInfoPanel({
   const tabs = isDm ? DM_TABS : CHANNEL_TABS;
   const [tab, setTab] = useState<string>(tabs[0]);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const leaveChannel = useMutation({
+    mutationFn: () => channelsApi.leave(workspaceId, active.id),
+    onSuccess: () => {
+      queryClient.setQueryData<ChannelSummary[] | undefined>(
+        ['channels', workspaceId],
+        (current) => current?.map((item) => (
+          item.id === active.id
+            ? { ...item, isMember: false, unreadCount: 0, lastReadAt: null }
+            : item
+        )),
+      );
+      queryClient.removeQueries({ queryKey: ['channel-messages', workspaceId, active.id] });
+      void queryClient.invalidateQueries({ queryKey: ['channel', workspaceId, active.id] });
+      void queryClient.invalidateQueries({ queryKey: ['channels', workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ['channel-members', workspaceId, active.id] });
+      toast.success('Left channel', `You left #${channelName}.`);
+    },
+    onError: (error) => {
+      toast.error(getChannelErrorMessage(error));
+    },
+  });
   const addChannelMember = useMutation({
     mutationFn: (userId: string) => channelsApi.addMember(workspaceId, active.id, { userId }),
     onSuccess: (addedMember) => {
@@ -557,7 +602,9 @@ export default function ChannelInfoPanel({
                 channel={channel}
                 creatorLabel={creatorLabel}
                 memberCount={channelMemberCount}
+                isLeaving={leaveChannel.isPending}
                 onEdit={() => setEditModalOpen(true)}
+                onLeave={() => leaveChannel.mutate()}
               />
             ) : (
               <div className="px-4 py-10 text-center text-[13px] text-sub">

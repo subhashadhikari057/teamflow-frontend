@@ -419,8 +419,10 @@ function getSeedMessages({
 function ConversationPane({
   channelId,
   channelIntro,
+  channelIsMember,
   channelName,
   channelLastReadAt,
+  channelType,
   channelUnreadCount,
   joinedChannelIds,
   composerLabel,
@@ -435,8 +437,10 @@ function ConversationPane({
 }: {
   channelId?: string;
   channelIntro: string;
+  channelIsMember: boolean;
   channelName: string;
   channelLastReadAt?: string | null;
+  channelType?: ChannelSummary['type'];
   channelUnreadCount: number;
   joinedChannelIds: string[];
   composerLabel: string;
@@ -465,7 +469,7 @@ function ConversationPane({
       cursor: pageParam,
       limit: MESSAGE_PAGE_SIZE,
     }),
-    enabled: !isDm && Boolean(channelId),
+    enabled: !isDm && Boolean(channelId) && channelIsMember,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => {
       if (lastPage.length < MESSAGE_PAGE_SIZE) {
@@ -476,7 +480,24 @@ function ConversationPane({
     },
     staleTime: 15_000,
   });
-
+  const joinChannel = useMutation({
+    mutationFn: () => channelsApi.join(workspaceId, channelId as string),
+    onSuccess: () => {
+      queryClient.setQueryData<ChannelSummary[] | undefined>(
+        ['channels', workspaceId],
+        (current) => current?.map((channel) => (
+          channel.id === channelId ? { ...channel, isMember: true } : channel
+        )),
+      );
+      void queryClient.invalidateQueries({ queryKey: ['channels', workspaceId] });
+      void queryClient.invalidateQueries({ queryKey: ['channel-members', workspaceId, channelId] });
+      void queryClient.invalidateQueries({ queryKey: ['channel-messages', workspaceId, channelId] });
+      toast.success('Joined channel', `You can now read and post in #${channelName}.`);
+    },
+    onError: (error) => {
+      toast.error(getMessageErrorMessage(error));
+    },
+  });
   const sendMessage = useMutation({
     mutationFn: (content: string) => messagesApi.send(workspaceId, channelId as string, { content }),
     onSuccess: (message) => {
@@ -584,7 +605,8 @@ function ConversationPane({
   const messages = !isDm && channelMessagesQuery.data ? apiMessages : fallbackMessages;
   const canLoadOlder = !isDm && Boolean(channelMessagesQuery.hasNextPage);
   const isBusy = sendMessage.isPending || updateMessage.isPending || deleteMessage.isPending;
-  const composerHidden = !isDm && isReadOnly && !isPrivileged;
+  const canJoinPublicChannel = !isDm && channelType === 'PUBLIC' && !channelIsMember;
+  const composerHidden = canJoinPublicChannel || (!isDm && isReadOnly && !isPrivileged);
   const joinedChannelIdsKey = joinedChannelIds.join(',');
   const typingNames = Object.values(typers);
   const firstTypingUserId = Object.keys(typers)[0];
@@ -812,6 +834,20 @@ function ConversationPane({
       const handleCreated = ({ channelId: incomingChannelId, message }: MessageCreatedPayload) => {
         applyMessageToChannelMeta(incomingChannelId, message);
 
+        if (message.senderId !== currentUserId && incomingChannelId !== channelId) {
+          const channelLabel = (
+            queryClient.getQueryData<ChannelSummary[] | undefined>(['channels', workspaceId])
+              ?.find((channel) => channel.id === incomingChannelId)
+              ?.name
+          ) ?? 'channel';
+
+          toast.info(
+            `${message.sender.name} in #${channelLabel}`,
+            message.content.length > 120 ? `${message.content.slice(0, 117)}...` : message.content,
+            message.sender.avatarUrl ?? undefined,
+          );
+        }
+
         if (incomingChannelId !== channelId) {
           return;
         }
@@ -916,7 +952,7 @@ function ConversationPane({
       socketCleanup?.();
       socketRef.current = null;
     };
-  }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, workspaceId]);
+  }, [channelId, currentUserId, isDm, joinedChannelIds, joinedChannelIdsKey, queryClient, toast, workspaceId]);
 
   function handleSend(text: string) {
     if (isDm) {
@@ -971,17 +1007,42 @@ function ConversationPane({
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-4">
         {!isDm && (
           <div className="px-5 pb-4 mb-2">
-            <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
-              <Icon name="hash" size={22} />
+            <div>
+              <div className="w-12 h-12 rounded-lg bg-elevated border border-line flex items-center justify-center text-ink mb-3">
+                <Icon name="hash" size={22} />
+              </div>
+              <h2 className="text-[22px] font-bold tracking-tightest text-ink">
+                Welcome to #{channelName}
+              </h2>
+              <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
             </div>
-            <h2 className="text-[22px] font-bold tracking-tightest text-ink">
-              Welcome to #{channelName}
-            </h2>
-            <p className="text-[14px] text-sub mt-1">{channelIntro}</p>
           </div>
         )}
 
-        {!isDm && canLoadOlder && (
+        {canJoinPublicChannel && (
+          <div className="px-5">
+            <div className="max-w-[420px] rounded-xl border border-line bg-panel px-5 py-6">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-elevated border border-line flex items-center justify-center text-sub shrink-0">
+                  <Icon name="globe" size={18} />
+                </div>
+                <div>
+                  <div className="text-[15px] font-semibold text-ink">Join #{channelName}</div>
+                  <p className="text-[13px] text-sub mt-1">
+                    This is a public channel. Join it to read the conversation and participate.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Button onClick={() => joinChannel.mutate()} disabled={joinChannel.isPending}>
+                  {joinChannel.isPending ? 'Joining…' : 'Join channel'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!canJoinPublicChannel && !isDm && canLoadOlder && (
           <div className="px-5 pb-4">
             <Button
               variant="secondary"
@@ -994,11 +1055,11 @@ function ConversationPane({
           </div>
         )}
 
-        {!isDm && channelMessagesQuery.isLoading && (
+        {!canJoinPublicChannel && !isDm && channelMessagesQuery.isLoading && (
           <div className="px-5 py-10 text-[13px] text-sub">Loading messages…</div>
         )}
 
-        {!isDm && channelMessagesQuery.isError && (
+        {!canJoinPublicChannel && !isDm && channelMessagesQuery.isError && (
           <div className="px-5 py-10 flex items-center gap-3">
             <span className="text-[13px] text-sub">We couldn&apos;t load channel messages.</span>
             <Button variant="secondary" size="sm" onClick={() => void channelMessagesQuery.refetch()}>
@@ -1007,7 +1068,7 @@ function ConversationPane({
           </div>
         )}
 
-        {(!isDm ? !channelMessagesQuery.isLoading && !channelMessagesQuery.isError : true) && (
+        {!canJoinPublicChannel && (!isDm ? !channelMessagesQuery.isLoading && !channelMessagesQuery.isError : true) && (
           <div className={density === 'comfortable' ? 'space-y-0.5' : ''}>
             {messages.map((m) => (
               <MessageRow
@@ -1023,11 +1084,11 @@ function ConversationPane({
           </div>
         )}
 
-        {!isDm && !channelMessagesQuery.isLoading && !channelMessagesQuery.isError && messages.length === 0 && (
+        {!canJoinPublicChannel && !isDm && !channelMessagesQuery.isLoading && !channelMessagesQuery.isError && messages.length === 0 && (
           <div className="px-5 py-10 text-[13px] text-sub">No messages yet. Start the conversation.</div>
         )}
 
-        {typingNames.length > 0 && (
+        {!canJoinPublicChannel && typingNames.length > 0 && (
           <div className="flex items-center gap-2 px-5 pt-3 text-[12.5px] text-sub dot-typing">
             {firstTypingUserId && USERS[firstTypingUserId] ? (
               <Avatar userId={firstTypingUserId} size={22} presence={false} />
@@ -1091,7 +1152,7 @@ export default function ChannelView({
   const channelMembersQuery = useQuery({
     queryKey: ['channel-members', workspaceId, apiChannel?.id],
     queryFn: () => channelsApi.listMembers(workspaceId, apiChannel!.id),
-    enabled: !isDm && Boolean(apiChannel?.id),
+    enabled: !isDm && Boolean(apiChannel?.id) && Boolean(apiChannel?.isMember),
     staleTime: 60_000,
   });
   const channelMembers = channelMembersQuery.data ?? [];
@@ -1213,8 +1274,10 @@ export default function ChannelView({
         key={conversationKey}
         channelId={apiChannel?.id}
         channelIntro={channelIntro}
+        channelIsMember={apiChannel?.isMember ?? true}
         channelName={channelName}
         channelLastReadAt={apiChannel?.lastReadAt ?? null}
+        channelType={apiChannel?.type}
         channelUnreadCount={apiChannel?.unreadCount ?? 0}
         joinedChannelIds={realtimeChannelIds}
         composerLabel={isDm ? dmUser!.name : `#${channelName}`}

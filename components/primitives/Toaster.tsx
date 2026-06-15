@@ -3,6 +3,7 @@
 import { createPortal } from 'react-dom';
 import { useToast } from '@/lib/toast-context';
 import type { ToastType } from '@/lib/toast-context';
+import { getUploadFileUrl } from '@/lib/api/uploads';
 import Icon from './Icon';
 
 const CONFIG: Record<ToastType, { icon: string; iconClass: string; bar: string }> = {
@@ -36,8 +37,17 @@ export default function Toaster() {
             {/* Type bar */}
             <div className={`absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl ${cfg.bar}`} />
 
-            {/* Icon */}
-            <Icon name={cfg.icon} size={15} className={`shrink-0 mt-[1px] ${cfg.iconClass}`} strokeWidth={2} />
+            {/* Icon / Avatar */}
+            {toast.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={getUploadFileUrl(toast.avatarUrl)}
+                alt=""
+                className="w-8 h-8 rounded-full object-cover shrink-0 mt-[1px]"
+              />
+            ) : (
+              <Icon name={cfg.icon} size={15} className={`shrink-0 mt-[1px] ${cfg.iconClass}`} strokeWidth={2} />
+            )}
 
             {/* Content */}
             <div className="flex-1 min-w-0">

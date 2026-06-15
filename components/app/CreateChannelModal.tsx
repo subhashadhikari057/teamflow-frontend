@@ -34,6 +34,7 @@ export default function CreateChannelModal({
   const toast = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [topic, setTopic] = useState('');
   const [type, setType] = useState<ChannelType>('PUBLIC');
   const [isReadOnly, setIsReadOnly] = useState(false);
   const normalizedName = useMemo(() => normalizeChannelName(name), [name]);
@@ -42,6 +43,7 @@ export default function CreateChannelModal({
     mutationFn: () => channelsApi.create(workspaceId, {
       name: normalizedName,
       description: description.trim() || undefined,
+      topic: topic.trim() || undefined,
       type,
       isReadOnly,
     }),
@@ -204,6 +206,20 @@ export default function CreateChannelModal({
             />
             <div className="flex justify-end mt-2">
               <p className="text-[12px] text-muted">{description.length}/240</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[13px] font-medium text-ink mb-2">Topic</label>
+            <input
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+              placeholder="What is this channel focused on right now?"
+              className="w-full h-11 rounded-md border border-line bg-elevated px-3 text-[14px] text-ink placeholder:text-muted outline-none focus:border-[#555555] focus:ring-2 focus:ring-white/20 transition"
+              maxLength={120}
+            />
+            <div className="flex justify-end mt-2">
+              <p className="text-[12px] text-muted">{topic.length}/120</p>
             </div>
           </div>
 

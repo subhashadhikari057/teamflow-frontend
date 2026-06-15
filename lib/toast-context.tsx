@@ -9,6 +9,7 @@ export interface ToastItem {
   type: ToastType;
   title: string;
   description?: string;
+  avatarUrl?: string;
   duration: number;
 }
 
@@ -16,11 +17,11 @@ interface ToastCtx {
   toasts: ToastItem[];
   removing: Set<string>;
   dismiss:  (id: string) => void;
-  show:     (title: string, opts?: { type?: ToastType; description?: string; duration?: number }) => void;
-  success:  (title: string, description?: string) => void;
-  error:    (title: string, description?: string) => void;
-  warning:  (title: string, description?: string) => void;
-  info:     (title: string, description?: string) => void;
+  show:     (title: string, opts?: { type?: ToastType; description?: string; duration?: number; avatarUrl?: string }) => void;
+  success:  (title: string, description?: string, avatarUrl?: string) => void;
+  error:    (title: string, description?: string, avatarUrl?: string) => void;
+  warning:  (title: string, description?: string, avatarUrl?: string) => void;
+  info:     (title: string, description?: string, avatarUrl?: string) => void;
 }
 
 const ToastContext = createContext<ToastCtx>({
@@ -51,19 +52,29 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const show = useCallback((
     title: string,
-    { type = 'default', description, duration = 3500 }: { type?: ToastType; description?: string; duration?: number } = {},
+    {
+      type = 'default',
+      description,
+      duration = 3500,
+      avatarUrl,
+    }: {
+      type?: ToastType;
+      description?: string;
+      duration?: number;
+      avatarUrl?: string;
+    } = {},
   ) => {
     const id = Math.random().toString(36).slice(2);
-    setToasts((prev) => [...prev.slice(-(MAX - 1)), { id, type, title, description, duration }]);
+    setToasts((prev) => [...prev.slice(-(MAX - 1)), { id, type, title, description, avatarUrl, duration }]);
     if (duration > 0) {
       timers.current.set(id, setTimeout(() => dismiss(id), duration));
     }
   }, [dismiss]);
 
-  const success = useCallback((t: string, d?: string) => show(t, { type: 'success', description: d }), [show]);
-  const error   = useCallback((t: string, d?: string) => show(t, { type: 'error',   description: d, duration: 5000 }), [show]);
-  const warning = useCallback((t: string, d?: string) => show(t, { type: 'warning', description: d }), [show]);
-  const info    = useCallback((t: string, d?: string) => show(t, { type: 'info',    description: d }), [show]);
+  const success = useCallback((t: string, d?: string, avatarUrl?: string) => show(t, { type: 'success', description: d, avatarUrl }), [show]);
+  const error   = useCallback((t: string, d?: string, avatarUrl?: string) => show(t, { type: 'error',   description: d, duration: 5000, avatarUrl }), [show]);
+  const warning = useCallback((t: string, d?: string, avatarUrl?: string) => show(t, { type: 'warning', description: d, avatarUrl }), [show]);
+  const info    = useCallback((t: string, d?: string, avatarUrl?: string) => show(t, { type: 'info',    description: d, avatarUrl }), [show]);
 
   return (
     <ToastContext.Provider value={{ toasts, removing, dismiss, show, success, error, warning, info }}>
