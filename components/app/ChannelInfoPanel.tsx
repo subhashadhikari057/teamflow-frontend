@@ -5,6 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Button from '@/components/primitives/Button';
 import Icon from '@/components/primitives/Icon';
 import EditChannelModal from '@/components/app/EditChannelModal';
+import { isPreviewableAttachment } from '@/components/app/AttachmentPreview';
+import AttachmentPreviewModal from '@/components/app/AttachmentPreviewModal';
 import { ConfirmDialog } from '@/components/app/settings/_shared';
 import { CHANNELS, USERS } from '@/lib/data';
 import { channelsApi } from '@/lib/api/channels';
@@ -395,6 +397,8 @@ function FilesTab({
   isError: boolean;
   onRetry: () => void;
 }) {
+  const [previewFile, setPreviewFile] = useState<SharedFileItem | null>(null);
+
   if (isLoading) {
     return <div className="px-4 py-10 text-center text-[13px] text-sub">Loading shared files…</div>;
   }
@@ -435,39 +439,71 @@ function FilesTab({
   }
 
   return (
-    <div className="p-3">
-      {files.map((file) => (
-        <a
-          key={file.id}
-          href={getUploadFileUrl(file.attachment.relativePath)}
-          target="_blank"
-          rel="noreferrer"
-          className="block border-b border-divider px-1 py-2 last:border-b-0 hover:bg-elevated/40 transition"
-        >
-          <div className="truncate text-[13px] text-ink">
-            {file.attachment.originalName}
-          </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
-            <span className="min-w-0 truncate">
-              {getFileKindLabel(file.attachment)} · {formatFileSize(file.attachment.size)} · {file.senderName} · {formatFileDate(file.createdAt)}
-            </span>
-            <button
-              type="button"
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void downloadFile(file.attachment.relativePath, file.attachment.originalName);
-              }}
-              className="shrink-0 cursor-pointer text-muted hover:text-ink transition"
-              aria-label={`Download ${file.attachment.originalName}`}
-              title="Download"
+    <>
+      <div className="p-3">
+        {files.map((file) => {
+          const isPreviewable = isPreviewableAttachment(file.attachment);
+          const content = (
+            <>
+              <div className="truncate text-[13px] text-ink">
+                {file.attachment.originalName}
+              </div>
+              <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+                <span className="min-w-0 truncate">
+                  {getFileKindLabel(file.attachment)} · {formatFileSize(file.attachment.size)} · {file.senderName} · {formatFileDate(file.createdAt)}
+                </span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void downloadFile(file.attachment.relativePath, file.attachment.originalName);
+                  }}
+                  className="shrink-0 cursor-pointer text-muted hover:text-ink transition"
+                  aria-label={`Download ${file.attachment.originalName}`}
+                  title="Download"
+                >
+                  <Icon name="download" size={12} />
+                </button>
+              </div>
+            </>
+          );
+
+          if (isPreviewable) {
+            return (
+              <button
+                key={file.id}
+                type="button"
+                onClick={() => setPreviewFile(file)}
+                className="block w-full cursor-pointer border-b border-divider px-1 py-2 text-left last:border-b-0 hover:bg-elevated/40 transition"
+              >
+                {content}
+              </button>
+            );
+          }
+
+          return (
+            <a
+              key={file.id}
+              href={getUploadFileUrl(file.attachment.relativePath)}
+              target="_blank"
+              rel="noreferrer"
+              className="block border-b border-divider px-1 py-2 last:border-b-0 hover:bg-elevated/40 transition"
             >
-              <Icon name="download" size={12} />
-            </button>
-          </div>
-        </a>
-      ))}
-    </div>
+              {content}
+            </a>
+          );
+        })}
+      </div>
+
+      <AttachmentPreviewModal
+        attachment={previewFile?.attachment ?? null}
+        metadata={previewFile
+          ? `${getFileKindLabel(previewFile.attachment)} · ${formatFileSize(previewFile.attachment.size)} · ${previewFile.senderName}`
+          : undefined}
+        onClose={() => setPreviewFile(null)}
+      />
+    </>
   );
 }
 

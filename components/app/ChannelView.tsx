@@ -11,6 +11,7 @@ import Button from '@/components/primitives/Button';
 import MessageBody from './MessageBody';
 import Composer from './Composer';
 import PinnedMessageBanner from './PinnedMessageBanner';
+import AttachmentPreview from './AttachmentPreview';
 import { CHANNELS, ENG_MESSAGES, USERS } from '@/lib/data';
 import { authApi } from '@/lib/api/auth';
 import { channelsApi } from '@/lib/api/channels';
@@ -324,9 +325,13 @@ function MessageRow({
     const mime = attachment.contentType || attachment.mimeType || '';
     return mime.startsWith('image/');
   });
+  const pdfAttachments = m.attachments.filter((attachment) => {
+    const mime = attachment.contentType || attachment.mimeType || '';
+    return mime === 'application/pdf';
+  });
   const fileAttachments = m.attachments.filter((attachment) => {
     const mime = attachment.contentType || attachment.mimeType || '';
-    return !mime.startsWith('image/');
+    return !mime.startsWith('image/') && mime !== 'application/pdf';
   });
 
   const attachments = m.attachments.length > 0 && (
@@ -344,11 +349,10 @@ function MessageRow({
                 rel="noreferrer"
                 className="block"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={getUploadFileUrl(attachment.relativePath)}
+                <AttachmentPreview
+                  attachment={attachment}
                   alt={attachment.originalName}
-                  className="block h-[180px] w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                  className="block h-[180px] w-full transition duration-200 group-hover:scale-[1.02]"
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.78)_100%)] px-3 py-2 pr-12">
                   <div className="truncate text-[12px] font-medium text-white">{attachment.originalName}</div>
@@ -371,6 +375,41 @@ function MessageRow({
           ))}
         </div>
       )}
+      {pdfAttachments.map((attachment) => (
+        <div
+          key={attachment.relativePath}
+          className="group relative max-w-[320px] overflow-hidden rounded-xl border border-line bg-panel transition hover:border-[#555555]"
+        >
+          <a
+            href={getUploadFileUrl(attachment.relativePath)}
+            target="_blank"
+            rel="noreferrer"
+            className="block"
+          >
+            <AttachmentPreview
+              attachment={attachment}
+              alt={attachment.originalName}
+              className="h-[180px] w-full"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-[linear-gradient(180deg,transparent_0%,rgba(0,0,0,0.78)_100%)] px-3 py-2 pr-12">
+              <div className="truncate text-[12px] font-medium text-white">{attachment.originalName}</div>
+              <div className="text-[11px] text-white/70">{formatAttachmentSize(attachment.size)}</div>
+            </div>
+          </a>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.preventDefault();
+              void downloadAttachment(attachment.relativePath, attachment.originalName);
+            }}
+            className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-white/12 bg-black/55 text-white/85 backdrop-blur-sm transition hover:bg-black/70 hover:text-white"
+            aria-label={`Download ${attachment.originalName}`}
+            title="Download"
+          >
+            <Icon name="download" size={14} />
+          </button>
+        </div>
+      ))}
       {fileAttachments.map((attachment) => (
         <div
           key={attachment.relativePath}
